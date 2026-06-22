@@ -68,21 +68,42 @@ struct AirPlayFairPlaySession {
     private var streamConnectionID: String?
     private var videoDecryptor: AirPlayAESCTRStream?
     private let provider: AirPlayFairPlayProvider?
+    private let providerDiagnostic: String
 
-    init(provider: AirPlayFairPlayProvider? = AirPlayFairPlayExternalProvider.makeFromEnvironment()) {
+    init() {
+        let lookup = AirPlayFairPlayExternalProvider.lookupFromEnvironment()
+        self.init(
+            provider: lookup.provider,
+            providerDiagnosticDescription: lookup.diagnosticDescription
+        )
+    }
+
+    init(
+        provider: AirPlayFairPlayProvider?,
+        providerDiagnosticDescription: String? = nil
+    ) {
         self.provider = provider
+        self.providerDiagnostic = providerDiagnosticDescription ?? provider.map { "loaded(\($0.diagnosticName))" } ?? "missing"
         if let provider {
             airPlayFairPlayLog.info("[AirPlayFairPlay] provider branch=LOADED name=\(provider.diagnosticName, privacy: .public)")
         } else {
-            airPlayFairPlayLog.warning("[AirPlayFairPlay] provider branch=UNAVAILABLE source=SPECCHIO_AIRPLAY_FAIRPLAY_PROVIDER")
+            let diagnostic = providerDiagnostic
+            airPlayFairPlayLog.warning("[AirPlayFairPlay] provider branch=UNAVAILABLE diagnostic=\(diagnostic, privacy: .public)")
         }
     }
 
     var providerDiagnosticDescription: String {
-        guard let provider else {
-            return "missing"
+        providerDiagnostic
+    }
+
+    var setupFailureDescription: String {
+        if provider == nil {
+            return "AirPlay FairPlay provider is unavailable; encrypted video cannot be decoded on this Mac."
         }
-        return "loaded(\(provider.diagnosticName))"
+        if case .unsupported(let reason) = phase {
+            return reason
+        }
+        return "AirPlay FairPlay setup is not complete; encrypted video cannot be decoded yet"
     }
 
     var canDecryptVideo: Bool {
@@ -712,12 +733,38 @@ final class AirPlayFairPlayExternalProvider: AirPlayFairPlayProvider {
     private let handle: UnsafeMutableRawPointer
     private let backend: Backend
 
+    struct LookupResult {
+        let provider: AirPlayFairPlayExternalProvider?
+        let diagnosticDescription: String
+    }
+
     static func makeFromEnvironment(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         fileManager: FileManager = .default
     ) -> AirPlayFairPlayExternalProvider? {
+        lookupFromEnvironment(environment: environment, fileManager: fileManager).provider
+    }
+
+    static func lookupFromEnvironment(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        fileManager: FileManager = .default
+    ) -> LookupResult {
         let bundledProviderDirectory = Bundle.main.privateFrameworksURL
         let applicationSupportDirectory = userApplicationSupportDirectory(fileManager: fileManager)
+        return lookupFromEnvironment(
+            environment: environment,
+            fileManager: fileManager,
+            bundledProviderDirectory: bundledProviderDirectory,
+            applicationSupportDirectory: applicationSupportDirectory
+        )
+    }
+
+    static func lookupFromEnvironment(
+        environment: [String: String],
+        fileManager: FileManager = .default,
+        bundledProviderDirectory: URL?,
+        applicationSupportDirectory: URL?
+    ) -> LookupResult {
         let candidates = providerPathCandidates(
             environment: environment,
             bundledProviderDirectory: bundledProviderDirectory,
@@ -728,18 +775,26 @@ final class AirPlayFairPlayExternalProvider: AirPlayFairPlayProvider {
             let searchPaths = bundledProviderURLs(frameworksDirectory: bundledProviderDirectory)
                 + defaultProviderURLs(applicationSupportDirectory: applicationSupportDirectory)
             airPlayFairPlayLog.warning("[AirPlayFairPlayProvider] lookup branch=NO_CANDIDATES envKey=\(providerPathEnvironmentKey, privacy: .public) defaultPaths=\(searchPaths.map(\.path).joined(separator: ","), privacy: .public)")
-            return nil
+            return LookupResult(provider: nil, diagnosticDescription: "missing(no-candidates)")
         }
 
+        var failures: [String] = []
         for candidate in candidates {
             do {
                 airPlayFairPlayLog.info("[AirPlayFairPlayProvider] lookup branch=ATTEMPT source=\(candidate.source, privacy: .public) path=\(candidate.url.path, privacy: .public)")
-                return try AirPlayFairPlayExternalProvider(path: candidate.url.path)
+                let provider = try AirPlayFairPlayExternalProvider(path: candidate.url.path)
+                return LookupResult(
+                    provider: provider,
+                    diagnosticDescription: "loaded(\(provider.diagnosticName))"
+                )
             } catch {
+                failures.append("\(candidate.source): \(error.localizedDescription)")
                 airPlayFairPlayLog.error("[AirPlayFairPlayProvider] lookup branch=LOAD_FAILED source=\(candidate.source, privacy: .public) path=\(candidate.url.path, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
             }
         }
-        return nil
+        let diagnostic = failures.isEmpty ? "missing(no-load-attempts)" : "failed(\(failures.joined(separator: " | ")))"
+        airPlayFairPlayLog.error("[AirPlayFairPlayProvider] lookup branch=ALL_FAILED diagnostic=\(diagnostic, privacy: .public)")
+        return LookupResult(provider: nil, diagnosticDescription: diagnostic)
     }
 
     struct ProviderPathCandidate: Equatable {

@@ -163,6 +163,7 @@ final class AirPlayBonjourPublisher: NSObject, NetServiceDelegate {
     ]
 
     private var services: [NetService] = []
+    private var isStopping = false
     private let onEvent: (Event) -> Void
     let identifier = UUID()
 
@@ -173,10 +174,16 @@ final class AirPlayBonjourPublisher: NSObject, NetServiceDelegate {
 
     func start(configuration: Configuration) {
         guard services.isEmpty else {
-            airPlayBonjourLog.info("[AirPlayBonjour] start skipped reason=already-advertising serviceCount=\(self.services.count)")
+            airPlayBonjourLog.info("[AirPlayBonjour] start skipped reason=services-present serviceCount=\(self.services.count) isStopping=\(self.isStopping)")
             return
         }
 
+        guard !isStopping else {
+            airPlayBonjourLog.info("[AirPlayBonjour] start skipped reason=stop-in-progress")
+            return
+        }
+
+        isStopping = false
         let airPlayTXT = Self.airPlayTXTRecord(configuration: configuration)
         let raopTXT = Self.raopTXTRecord(configuration: configuration)
         publish(
@@ -193,17 +200,25 @@ final class AirPlayBonjourPublisher: NSObject, NetServiceDelegate {
         )
     }
 
-    func stop() {
+    @discardableResult
+    func stop() -> Bool {
         guard !services.isEmpty else {
-            airPlayBonjourLog.info("[AirPlayBonjour] stop skipped reason=no-services")
-            return
+            airPlayBonjourLog.info("[AirPlayBonjour] stop skipped reason=no-services isStopping=\(self.isStopping)")
+            isStopping = false
+            return false
         }
 
+        guard !isStopping else {
+            airPlayBonjourLog.info("[AirPlayBonjour] stop skipped reason=already-stopping serviceCount=\(self.services.count)")
+            return true
+        }
+
+        isStopping = true
         for service in services {
             airPlayBonjourLog.info("[AirPlayBonjour] stopping service type=\(service.type, privacy: .public) name=\(service.name, privacy: .public)")
             service.stop()
         }
-        services.removeAll()
+        return true
     }
 
     private func publish(type: String, name: String, port: UInt16, txt: [String: Data]) {
@@ -265,12 +280,19 @@ final class AirPlayBonjourPublisher: NSObject, NetServiceDelegate {
     func netService(_ sender: NetService, didNotPublish errorDict: [String : NSNumber]) {
         let errorText = String(describing: errorDict)
         airPlayBonjourLog.error("[AirPlayBonjour] did not publish type=\(sender.type, privacy: .public) name=\(sender.name, privacy: .public) error=\(errorText, privacy: .public)")
+        services.removeAll { $0 === sender }
+        if services.isEmpty {
+            isStopping = false
+        }
         onEvent(.didNotPublish(type: sender.type, name: sender.name, error: errorText))
     }
 
     func netServiceDidStop(_ sender: NetService) {
         airPlayBonjourLog.info("[AirPlayBonjour] did stop type=\(sender.type, privacy: .public) name=\(sender.name, privacy: .public)")
         services.removeAll { $0 === sender }
+        if services.isEmpty {
+            isStopping = false
+        }
         onEvent(.didStop(
             type: sender.type,
             name: sender.name,

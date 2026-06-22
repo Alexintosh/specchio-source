@@ -1,19 +1,19 @@
-# Build Specchio 2026060902
+# Build Specchio 2026061101
 
-This tag contains the source corresponding to Specchio build `2026060902`.
+This tag contains the source corresponding to Specchio build `2026061101`.
 
 ## Build Metadata
 
 - Specchio app commit:
-  `5e2f3fa1e9b29d3234375d46075087ffa36e136b`
+  `f6cc20c96bb4e7f60a60ed3b1886d2deb20bc57b`
 - Original app commit date:
-  `2026-06-09 21:08:24 +0100`
+  `2026-06-12 12:22:49 +0100`
 - WebDriverAgent submodule commit:
   `e363ccc0b6eb7de57b04515cedcf2587b0f494fc`
 - Bundled AirPlay FairPlay provider architecture:
-  `arm64`
+  `arm64 x86_64`
 - Bundled AirPlay FairPlay provider SHA-256:
-  `2bfbccd3a8c4aa172663893bc8a39030d6b025e6fcd9981063e18cd56e2d5c35`
+  `a400108e40744d923e14dfa509d12b6f0e833a74183fa72302060bdb101323e9`
 - AirPlay FairPlay provider source import commit:
   `f6cc20c96bb4e7f60a60ed3b1886d2deb20bc57b`
 - UxPlay upstream commit:
@@ -38,7 +38,7 @@ git submodule update --init --recursive
 Build the FairPlay provider for this build:
 
 ```sh
-SPECCHIO_FAIRPLAY_ARCHS="arm64" scripts/build-airplay-fairplay-provider.sh
+SPECCHIO_FAIRPLAY_ARCHS="arm64 x86_64" scripts/build-airplay-fairplay-provider.sh
 ```
 
 Build the macOS app:

@@ -494,6 +494,7 @@
 				KB1A2B3C4D5E6F7081920010 /* Copy SpecchioKeyboard */,
 				6D22D2E651BA0370CB255C20 /* Sources */,
 				A1B2C3D4E5F6071829304050 /* Frameworks */,
+				FPLAYSH0000000000000001 /* Build AirPlay FairPlay Provider */,
 				FPLAYCP0000000000000001 /* Copy AirPlay FairPlay Provider */,
 				FF718293A4B5C6D7E8F90011 /* Copy BundledTools */,
 			);
@@ -577,6 +578,32 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		FPLAYSH0000000000000001 /* Build AirPlay FairPlay Provider */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/build-airplay-fairplay-provider.sh",
+				"$(SRCROOT)/ThirdParty/AirPlayFairPlay/Specchio/specchio_fairplay_provider.c",
+				"$(SRCROOT)/ThirdParty/AirPlayFairPlay/UxPlay/lib/fairplay_playfair.c",
+				"$(SRCROOT)/ThirdParty/AirPlayFairPlay/UxPlay/lib/fairplay.h",
+				"$(SRCROOT)/ThirdParty/AirPlayFairPlay/UxPlay/lib/logger.h",
+				"$(SRCROOT)/ThirdParty/AirPlayFairPlay/UxPlay/lib/playfair",
+			);
+			name = "Build AirPlay FairPlay Provider";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/SupportingFiles/AirPlayFairPlay/libfairplay.dylib",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/scripts/build-airplay-fairplay-provider.sh\"\n";
+		};
 		2683F8EE2F7B194200E1847C /* Copy WebDriverAgent */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -894,7 +921,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060902;
+				CURRENT_PROJECT_VERSION = 2026061101;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -902,7 +929,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060902;
+				MARKETING_VERSION = 2026061101;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -917,7 +944,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060902;
+				CURRENT_PROJECT_VERSION = 2026061101;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -926,7 +953,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060902;
+				MARKETING_VERSION = 2026061101;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;

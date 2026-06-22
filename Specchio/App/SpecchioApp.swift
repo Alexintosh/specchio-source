@@ -31,6 +31,10 @@ struct SpecchioApp: App {
         userDriverDelegate: nil
     )
 
+    private var defaultEasyModeWindowSize: CGSize {
+        SpecchioPhoneWindowMetrics.preferredLaunchPhoneScreenSize()
+    }
+
     var body: some Scene {
         WindowGroup {
             SpecchioWindowRoot(
@@ -41,9 +45,8 @@ struct SpecchioApp: App {
             .preferredColorScheme(.dark)
         }
         .defaultSize(
-            width: SpecchioPhoneWindowMetrics.defaultPhoneScreenSize.width,
-            height: SpecchioPhoneWindowMetrics.defaultPhoneScreenSize.height
-                + EasyControlBarMetrics.windowReservedHeight
+            width: defaultEasyModeWindowSize.width,
+            height: defaultEasyModeWindowSize.height
         )
         .commands {
             SpecchioAppCommands(
@@ -109,6 +112,7 @@ private struct SpecchioWindowRoot: View {
     @State private var windowID = UUID().uuidString
     @State private var showDevMenuPaywall = false
     @AppStorage(AppSettings.Keys.alwaysOnTop) private var alwaysOnTop = false
+    @AppStorage(AppSettings.Keys.easyToolbarStyle) private var easyToolbarStyle = AppSettings.Defaults.easyToolbarStyle
 
     private var easyMatchedWindowAspectPolicy: SpecchioWindowAspectPolicy {
         .visibleContentPhoneSurface(
@@ -139,6 +143,14 @@ private struct SpecchioWindowRoot: View {
         }
     }
 
+    private var presentationStandardTitlebarEnabled: Bool {
+        false
+    }
+
+    private var easyLaunchWindowSize: CGSize {
+        SpecchioPhoneWindowMetrics.preferredLaunchPhoneScreenSize()
+    }
+
     var body: some View {
         Group {
             switch selectedMode {
@@ -155,19 +167,24 @@ private struct SpecchioWindowRoot: View {
         .modifier(SpecchioWindowChromeModifier(
             aspectPolicy: windowAspectPolicy,
             chromeStyle: windowChromeStyle,
-            alwaysOnTop: alwaysOnTop
+            alwaysOnTop: alwaysOnTop,
+            presentationStandardTitlebarEnabled: presentationStandardTitlebarEnabled
         ))
         .focusedSceneValue(\.specchioLaunchMode, $selectedMode)
         .focusedSceneValue(\.specchioShowPaywall, showPaywallFromDevMenu)
         .focusedSceneValue(\.specchioStartInteractiveOnboarding, startInteractiveOnboardingFromDevMenu)
         .onAppear {
-            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] appeared windowID=\(windowID, privacy: .public) mode=\(selectedMode.logName, privacy: .public) windowPolicy=\(windowAspectPolicy.logDescription, privacy: .public) chromeStyle=\(windowChromeStyle.logName, privacy: .public) alwaysOnTop=\(alwaysOnTop)")
+            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] appeared windowID=\(windowID, privacy: .public) mode=\(selectedMode.logName, privacy: .public) windowPolicy=\(windowAspectPolicy.logDescription, privacy: .public) chromeStyle=\(windowChromeStyle.logName, privacy: .public) easyToolbarStyle=\(easyToolbarStyle, privacy: .public) presentationStandardTitlebarEnabled=\(presentationStandardTitlebarEnabled) alwaysOnTop=\(alwaysOnTop)")
+            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] easy launch size rule source=\(SpecchioPhoneWindowMetrics.easyModeLaunchMeasurementSource, privacy: .public) launchWidth=\(easyLaunchWindowSize.width) launchHeight=\(easyLaunchWindowSize.height) toolbarWindowSeparate=true")
         }
         .onChange(of: selectedMode) { oldValue, newValue in
-            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] mode changed windowID=\(windowID, privacy: .public) from=\(oldValue.logName, privacy: .public) to=\(newValue.logName, privacy: .public) windowPolicy=\(windowAspectPolicy.logDescription, privacy: .public) chromeStyle=\(windowChromeStyle.logName, privacy: .public) alwaysOnTop=\(alwaysOnTop)")
+            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] mode changed windowID=\(windowID, privacy: .public) from=\(oldValue.logName, privacy: .public) to=\(newValue.logName, privacy: .public) windowPolicy=\(windowAspectPolicy.logDescription, privacy: .public) chromeStyle=\(windowChromeStyle.logName, privacy: .public) easyToolbarStyle=\(easyToolbarStyle, privacy: .public) presentationStandardTitlebarEnabled=\(presentationStandardTitlebarEnabled) alwaysOnTop=\(alwaysOnTop)")
         }
         .onChange(of: alwaysOnTop) { _, newValue in
             SpecchioLogger.easyMode.info("[SpecchioWindowRoot] alwaysOnTop changed windowID=\(windowID, privacy: .public) enabled=\(newValue) chromeStyle=\(windowChromeStyle.logName, privacy: .public)")
+        }
+        .onChange(of: easyToolbarStyle) { _, newValue in
+            SpecchioLogger.easyMode.info("[SpecchioWindowRoot] easy toolbar style changed windowID=\(windowID, privacy: .public) style=\(newValue, privacy: .public) presentationStandardTitlebarEnabled=\(presentationStandardTitlebarEnabled)")
         }
         .onChange(of: showDevMenuPaywall) { _, isPresented in
             SpecchioLogger.ui.info("[SpecchioWindowRoot] Dev menu paywall presentation changed windowID=\(windowID, privacy: .public) presented=\(isPresented)")

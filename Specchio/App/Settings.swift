@@ -30,7 +30,10 @@ class AppSettings: ObservableObject {
         static let easyToolbarCommandOrder = "easyToolbarCommandOrder"
         static let easyToolbarVisibleCommandOrder = "easyToolbarVisibleCommandOrder"
         static let easyToolbarOverflowCommandOrder = "easyToolbarOverflowCommandOrder"
+        static let easyToolbarStyle = "easyToolbarStyle"
         static let easyToolbarAlwaysVisible = "easyToolbarAlwaysVisible"
+        static let easyFloatingToolbarAnchor = "easyFloatingToolbarAnchor"
+        static let easyFloatingToolbarAllowsDragging = "easyFloatingToolbarAllowsDragging"
         static let easyShowFPSCounter = "easyShowFPSCounter"
         static let easyReplayKitH264TargetFPS = "easyReplayKitH264TargetFPS"
         static let easyAirPlayQuality = "easyAirPlayQuality"
@@ -41,10 +44,13 @@ class AppSettings: ObservableObject {
 
     enum Defaults {
         static let bluetoothAutoConnect = true
-        static let easyReplayKitH264TargetFPS: Double = 30
-        static let easyAirPlayQuality = EasyAirPlayQuality.balanced
+        static let easyReplayKitH264TargetFPS: Double = 60
+        static let easyAirPlayQuality = EasyAirPlayQuality.high
         static let easyUSBTargetFPS: Double = 60
+        static let easyToolbarStyle = EasyToolbarStyle.floating
         static let easyToolbarAlwaysVisible = true
+        static let easyFloatingToolbarAnchor = EasyFloatingToolbarAnchor.above
+        static let easyFloatingToolbarAllowsDragging = true
         static let easyAirPlayConnectionTutorialHidden = false
         static let easyTrackpadSwipeToDragEnabled = false
         static let easyTrackpadSwipeToDragMode = EasyTrackpadSwipeToDragMode.live
@@ -96,13 +102,13 @@ class AppSettings: ObservableObject {
             case balanced:
                 return "Balanced"
             default:
-                return "Balanced"
+                return "High"
             }
         }
 
         static func sanitized(_ value: String?) -> String {
             guard let value, allowedValues.contains(value) else {
-                return balanced
+                return Defaults.easyAirPlayQuality
             }
             return value
         }
@@ -115,7 +121,7 @@ class AppSettings: ObservableObject {
         case EasyAirPlayQuality.balanced:
             return (width: 1920, height: 1080)
         default:
-            return (width: 1920, height: 1080)
+            return (width: 2560, height: 1440)
         }
     }
 
@@ -144,6 +150,52 @@ class AppSettings: ObservableObject {
         static func sanitized(_ value: String?) -> String {
             guard let value, allowedValues.contains(value) else {
                 return live
+            }
+            return value
+        }
+    }
+
+    enum EasyFloatingToolbarAnchor {
+        static let above = "above"
+        static let below = "below"
+        static let allowedValues = [above, below]
+
+        static func label(for value: String) -> String {
+            switch sanitized(value) {
+            case below:
+                return "Below"
+            case above:
+                return "Above"
+            default:
+                return "Above"
+            }
+        }
+
+        static func sanitized(_ value: String?) -> String {
+            guard let value, allowedValues.contains(value) else {
+                return above
+            }
+            return value
+        }
+    }
+
+    enum EasyToolbarStyle {
+        static let floating = "floating"
+        static let standard = "standard"
+        static let allowedValues = [floating]
+
+        static func label(for value: String) -> String {
+            switch sanitized(value) {
+            case floating:
+                return "Floating"
+            default:
+                return "Floating"
+            }
+        }
+
+        static func sanitized(_ value: String?) -> String {
+            guard let value, allowedValues.contains(value) else {
+                return floating
             }
             return value
         }
@@ -193,8 +245,14 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyToolbarVisibleCommandOrder) var easyToolbarVisibleCommandOrder: String = EasyToolbarCommand.defaultVisibleOrderStorageValue
     /// Easy mode: ordered toolbar command identifiers that should live in the overflow menu.
     @AppStorage(Keys.easyToolbarOverflowCommandOrder) var easyToolbarOverflowCommandOrder: String = EasyToolbarCommand.defaultOverflowOrderStorageValue
+    /// Easy mode: toolbar presentation style, either external floating panel or standard in-window header.
+    @AppStorage(Keys.easyToolbarStyle) var easyToolbarStyle: String = Defaults.easyToolbarStyle
     /// Easy mode: keep the presentation toolbar visible instead of revealing it only near the top edge.
     @AppStorage(Keys.easyToolbarAlwaysVisible) var easyToolbarAlwaysVisible: Bool = Defaults.easyToolbarAlwaysVisible
+    /// Easy mode: side of the mirror window used to anchor the external floating toolbar panel.
+    @AppStorage(Keys.easyFloatingToolbarAnchor) var easyFloatingToolbarAnchor: String = Defaults.easyFloatingToolbarAnchor
+    /// Easy mode: allow users to drag the external floating toolbar panel away from its anchor.
+    @AppStorage(Keys.easyFloatingToolbarAllowsDragging) var easyFloatingToolbarAllowsDragging: Bool = Defaults.easyFloatingToolbarAllowsDragging
     /// Easy mode: show the live FPS count in the bottom status bar.
     @AppStorage(Keys.easyShowFPSCounter) var easyShowFPSCounter: Bool = false
     /// Easy mode: ReplayKit H.264 frame gate target advertised to the broadcast extension.

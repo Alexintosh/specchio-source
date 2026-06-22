@@ -43,6 +43,168 @@ struct AirPlayReceiverDisplayConfiguration: Equatable {
     }
 }
 
+private enum AirPlayFramePixelDiagnostics {
+    private static let bytesPerPixel = 4
+    private static let bitsPerComponent = 8
+    private static let maximumBandHeight = 96
+    private static let minimumBandHeight = 8
+    private static let proportionalBandDivisor = 16
+    private static let targetHorizontalSamples = 64
+    private static let targetVerticalSamplesPerBand = 24
+    private static let darkLumaThreshold = 0.08
+    private static let opaqueAlphaThreshold = 0.9
+
+    static func describe(
+        image: CGImage,
+        header: ReplayKitH264AccessUnitHeader,
+        bufferSize: CGSize,
+        cropSource: String
+    ) -> String {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0 else {
+            return "branch=invalid-image-size width=\(width) height=\(height)"
+        }
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return "branch=missing-srgb width=\(width) height=\(height)"
+        }
+
+        let bytesPerRow = width * bytesPerPixel
+        var rgbaBytes = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+        let drewImage = rgbaBytes.withUnsafeMutableBytes { rawBuffer -> Bool in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return false
+            }
+
+            guard let context = CGContext(
+                data: baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: bitsPerComponent,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) else {
+                return false
+            }
+
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+
+        guard drewImage else {
+            return "branch=bitmap-draw-failed width=\(width) height=\(height) bytesPerRow=\(bytesPerRow)"
+        }
+
+        let proportionalBandHeight = max(minimumBandHeight, height / proportionalBandDivisor)
+        let bandHeight = min(height, maximumBandHeight, proportionalBandHeight)
+        let centerStartY = max(0, (height - bandHeight) / 2)
+        let lastStartY = max(0, height - bandHeight)
+
+        let firstBand = measureBand(
+            rgbaBytes: rgbaBytes,
+            width: width,
+            bytesPerRow: bytesPerRow,
+            startY: 0,
+            endY: bandHeight
+        )
+        let centerBand = measureBand(
+            rgbaBytes: rgbaBytes,
+            width: width,
+            bytesPerRow: bytesPerRow,
+            startY: centerStartY,
+            endY: min(height, centerStartY + bandHeight)
+        )
+        let lastBand = measureBand(
+            rgbaBytes: rgbaBytes,
+            width: width,
+            bytesPerRow: bytesPerRow,
+            startY: lastStartY,
+            endY: height
+        )
+
+        return "branch=sampled-rgba image=\(width)x\(height) header=\(header.width)x\(header.height) buffer=\(Int(bufferSize.width))x\(Int(bufferSize.height)) cropSource=\(cropSource) bandHeight=\(bandHeight) row0={\(firstBand.logDescription)} center={\(centerBand.logDescription)} rowLast={\(lastBand.logDescription)}"
+    }
+
+    private static func measureBand(
+        rgbaBytes: [UInt8],
+        width: Int,
+        bytesPerRow: Int,
+        startY: Int,
+        endY: Int
+    ) -> BandMeasurement {
+        let bandHeight = max(0, endY - startY)
+        guard width > 0, bandHeight > 0 else {
+            return BandMeasurement(sampleCount: 0, averageLuma: 0, darkRatio: 0, averageAlpha: 0)
+        }
+
+        let xStride = max(1, width / targetHorizontalSamples)
+        let yStride = max(1, bandHeight / targetVerticalSamplesPerBand)
+        var sampleCount = 0
+        var darkCount = 0
+        var lumaTotal = 0.0
+        var alphaTotal = 0.0
+
+        var y = startY
+        while y < endY {
+            var x = 0
+            while x < width {
+                let offset = (y * bytesPerRow) + (x * bytesPerPixel)
+                guard offset + 3 < rgbaBytes.count else {
+                    x += xStride
+                    continue
+                }
+
+                let red = Double(rgbaBytes[offset]) / 255.0
+                let green = Double(rgbaBytes[offset + 1]) / 255.0
+                let blue = Double(rgbaBytes[offset + 2]) / 255.0
+                let alpha = Double(rgbaBytes[offset + 3]) / 255.0
+                let luma = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+                sampleCount += 1
+                lumaTotal += luma
+                alphaTotal += alpha
+                if luma <= darkLumaThreshold, alpha >= opaqueAlphaThreshold {
+                    darkCount += 1
+                }
+
+                x += xStride
+            }
+
+            y += yStride
+        }
+
+        guard sampleCount > 0 else {
+            return BandMeasurement(sampleCount: 0, averageLuma: 0, darkRatio: 0, averageAlpha: 0)
+        }
+
+        return BandMeasurement(
+            sampleCount: sampleCount,
+            averageLuma: lumaTotal / Double(sampleCount),
+            darkRatio: Double(darkCount) / Double(sampleCount),
+            averageAlpha: alphaTotal / Double(sampleCount)
+        )
+    }
+
+    private struct BandMeasurement {
+        let sampleCount: Int
+        let averageLuma: Double
+        let darkRatio: Double
+        let averageAlpha: Double
+
+        var logDescription: String {
+            "samples=\(sampleCount) avgLuma=\(Self.format(averageLuma)) darkRatio=\(Self.format(darkRatio)) avgAlpha=\(Self.format(averageAlpha))"
+        }
+
+        private static func format(_ value: Double) -> String {
+            String(format: "%.3f", value)
+        }
+    }
+}
+
 struct AirPlaySetupResponsePayload {
     typealias Stream = [String: Any]
 
@@ -529,6 +691,8 @@ final class AirPlayScreenStreamManager: ObservableObject {
     private var pairingPINClearWorkItem: DispatchWorkItem?
     private var receiverConfiguration: AirPlayBonjourPublisher.Configuration?
     private var shouldAdvertise = false
+    private var pendingBonjourRepublishReason: String?
+    private var pendingBonjourRepublishControlPort: UInt16?
     private var timingServer: AirPlayTimingServer?
     private var mirrorDataServer: AirPlayMirrorDataServer?
     private var audioSinkServer: AirPlayAudioSinkServer?
@@ -596,6 +760,22 @@ final class AirPlayScreenStreamManager: ObservableObject {
         }
     }
 
+    func refreshAdvertisement(source: String) {
+        airPlayLog.info("[AirPlayManager] manual Bonjour refresh requested source=\(source, privacy: .public)")
+        startTimers()
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.shouldAdvertise = true
+            guard self.controlServer != nil else {
+                airPlayLog.info("[AirPlayManager] manual Bonjour refresh branch=START_LISTENER source=\(source, privacy: .public)")
+                self.start()
+                return
+            }
+
+            self.refreshBonjourAdvertisement(reason: "manual refresh \(source)")
+        }
+    }
+
     func start() {
         airPlayLog.info("[AirPlayManager] start requested")
         startTimers()
@@ -638,9 +818,21 @@ final class AirPlayScreenStreamManager: ObservableObject {
         queue.async { [weak self] in
             guard let self else { return }
             self.shouldAdvertise = false
-            self.bonjourPublisher?.stop()
-            self.bonjourPublisher = nil
-            self.bonjourPublisherID = nil
+            self.pendingBonjourRepublishReason = nil
+            self.pendingBonjourRepublishControlPort = nil
+            if let publisher = self.bonjourPublisher {
+                airPlayLog.info("[AirPlayManager] stop branch=STOP_BONJOUR_ASYNC publisherID=\(publisher.identifier.uuidString, privacy: .public)")
+                let stopRequested = publisher.stop()
+                if !stopRequested {
+                    airPlayLog.info("[AirPlayManager] stop branch=CLEAR_EMPTY_BONJOUR_PUBLISHER publisherID=\(publisher.identifier.uuidString, privacy: .public)")
+                    self.bonjourPublisher = nil
+                    self.bonjourPublisherID = nil
+                    self.receiverConfiguration = nil
+                }
+            } else {
+                airPlayLog.info("[AirPlayManager] stop branch=NO_BONJOUR_PUBLISHER")
+                self.receiverConfiguration = nil
+            }
             self.timingServer?.stop(reason: "AirPlay manager stop")
             self.timingServer = nil
             self.activeTimingPort = nil
@@ -825,16 +1017,30 @@ final class AirPlayScreenStreamManager: ObservableObject {
                 return
             }
 
-            airPlayLog.info("[AirPlayManager] Bonjour refresh branch=STOP_AND_REPUBLISH reason=\(reason, privacy: .public) controlPort=\(controlPort) publisherPresent=\(self.bonjourPublisher != nil) isAdvertising=\(self.isAdvertising)")
+            airPlayLog.info("[AirPlayManager] Bonjour refresh branch=STOP_THEN_REPUBLISH reason=\(reason, privacy: .public) controlPort=\(controlPort) publisherPresent=\(self.bonjourPublisher != nil) isAdvertising=\(self.isAdvertising)")
             self.shouldAdvertise = true
-            self.bonjourPublisher?.stop()
-            self.bonjourPublisher = nil
-            self.bonjourPublisherID = nil
-            self.receiverConfiguration = nil
             self.isAdvertising = false
             self.statusMessage = "AirPlay refreshing advertisement"
             self.streamHealth = .advertising
-            self.startBonjourPublisherOnMain(controlPort: controlPort, trigger: "refresh after \(reason)")
+            guard let publisher = self.bonjourPublisher else {
+                airPlayLog.info("[AirPlayManager] Bonjour refresh branch=NO_EXISTING_PUBLISHER_START reason=\(reason, privacy: .public) controlPort=\(controlPort)")
+                self.startBonjourPublisherOnMain(controlPort: controlPort, trigger: "refresh without publisher after \(reason)")
+                return
+            }
+
+            self.pendingBonjourRepublishReason = reason
+            self.pendingBonjourRepublishControlPort = controlPort
+            let stopRequested = publisher.stop()
+            airPlayLog.info("[AirPlayManager] Bonjour refresh branch=WAIT_FOR_STOP reason=\(reason, privacy: .public) stopRequested=\(stopRequested) publisherID=\(publisher.identifier.uuidString, privacy: .public)")
+            guard stopRequested else {
+                self.completeBonjourStopAndRepublishIfNeeded(
+                    type: "none",
+                    name: "no-services",
+                    publisherID: publisher.identifier,
+                    remainingServices: 0
+                )
+                return
+            }
         }
     }
 
@@ -872,6 +1078,21 @@ final class AirPlayScreenStreamManager: ObservableObject {
         case .didNotPublish(let type, let name, let error):
             publishError("AirPlay Bonjour publish failed for \(type) \(name): \(error)", trigger: "Bonjour did not publish")
         case .didStop(let type, let name, let publisherID, let remainingServices):
+            completeBonjourStopAndRepublishIfNeeded(
+                type: type,
+                name: name,
+                publisherID: publisherID,
+                remainingServices: remainingServices
+            )
+        }
+    }
+
+    private func completeBonjourStopAndRepublishIfNeeded(
+        type: String,
+        name: String,
+        publisherID: UUID,
+        remainingServices: Int
+    ) {
             let isCurrentPublisher = publisherID == bonjourPublisherID
             airPlayLog.info("[AirPlayManager] Bonjour stopped type=\(type, privacy: .public) name=\(name, privacy: .public) remainingServices=\(remainingServices) currentPublisher=\(isCurrentPublisher) shouldAdvertise=\(self.shouldAdvertise) controlServerPresent=\(self.controlServer != nil)")
             guard isCurrentPublisher else {
@@ -889,25 +1110,30 @@ final class AirPlayScreenStreamManager: ObservableObject {
                 self.bonjourPublisher = nil
                 self.bonjourPublisherID = nil
                 self.receiverConfiguration = nil
+                let pendingReason = self.pendingBonjourRepublishReason
+                let pendingControlPort = self.pendingBonjourRepublishControlPort
+                self.pendingBonjourRepublishReason = nil
+                self.pendingBonjourRepublishControlPort = nil
                 guard self.shouldAdvertise else {
                     airPlayLog.info("[AirPlayManager] Bonjour restart skipped branch=INTENTIONAL_STOP type=\(type, privacy: .public) name=\(name, privacy: .public)")
                     return
                 }
-                guard self.controlServer != nil, let controlPort = self.controlPort else {
-                    airPlayLog.warning("[AirPlayManager] Bonjour restart skipped branch=NO_CONTROL_LISTENER type=\(type, privacy: .public) controlPort=\(self.controlPort.map(String.init) ?? "nil", privacy: .public)")
+                guard self.controlServer != nil, let controlPort = pendingControlPort ?? self.controlPort else {
+                    airPlayLog.warning("[AirPlayManager] Bonjour restart skipped branch=NO_CONTROL_LISTENER type=\(type, privacy: .public) pendingReason=\(pendingReason ?? "nil", privacy: .public) controlPort=\(self.controlPort.map(String.init) ?? "nil", privacy: .public)")
                     self.statusMessage = "AirPlay advertisement stopped"
                     self.streamHealth = .disconnected(reason: "AirPlay advertisement stopped")
                     return
                 }
-                airPlayLog.info("[AirPlayManager] Bonjour restart branch=AUTO_REPUBLISH type=\(type, privacy: .public) name=\(name, privacy: .public) controlPort=\(controlPort)")
+                let branch = pendingReason == nil ? "AUTO_REPUBLISH" : "PENDING_REPUBLISH"
+                let trigger = pendingReason.map { "Bonjour stopped after \($0)" } ?? "Bonjour stopped \(type)"
+                airPlayLog.info("[AirPlayManager] Bonjour restart branch=\(branch, privacy: .public) type=\(type, privacy: .public) name=\(name, privacy: .public) controlPort=\(controlPort) pendingReason=\(pendingReason ?? "nil", privacy: .public)")
                 self.statusMessage = "AirPlay restarting advertisement"
                 self.streamHealth = .advertising
                 self.startBonjourPublisherOnMain(
                     controlPort: controlPort,
-                    trigger: "Bonjour stopped \(type)"
+                    trigger: trigger
                 )
             }
-        }
     }
 
     private func handleControlRequest(_ request: AirPlayControlRequest, respond: @escaping AirPlayControlServer.ResponseHandler) {
@@ -1059,7 +1285,9 @@ final class AirPlayScreenStreamManager: ObservableObject {
             publishMediaPlaybackStatus("FairPlay setup2 \(response.statusCode < 400 ? "advanced" : "blocked")")
         }
         if response.statusCode >= 400 {
-            publishError("AirPlay FairPlay setup is not complete; encrypted video cannot be decoded yet", trigger: routeName)
+            let reason = fairPlaySession.setupFailureDescription
+            airPlayLog.error("[AirPlayFairPlay] setup blocked route=\(routeName, privacy: .public) status=\(response.statusCode) provider=\(self.fairPlaySession.providerDiagnosticDescription, privacy: .public) reason=\(reason, privacy: .public)")
+            publishError(reason, trigger: routeName)
         } else {
             publishHealth(.settingUp, trigger: routeName)
             publishStatus("AirPlay FairPlay setup advanced")
@@ -2326,6 +2554,13 @@ final class AirPlayScreenStreamManager: ObservableObject {
                     advertisedHeight: Int(advertised.height)
                 )
                 airPlayLog.info("[AirPlayQuality] first decoded frame codec=\(codec.diagnosticName, privacy: .public) quality=\(self.advertisedAirPlayQuality, privacy: .public) advertised=\(advertisedText, privacy: .public) decoded=\(decodedText, privacy: .public) matchedAdvertisedEdge=\(matchedAdvertisedEdge)")
+                let pixelDiagnostics = AirPlayFramePixelDiagnostics.describe(
+                    image: frame.image,
+                    header: frame.header,
+                    bufferSize: frame.bufferSize,
+                    cropSource: frame.displayCropSource
+                )
+                airPlayLog.info("[AirPlayFramePixels] first published frame codec=\(codec.diagnosticName, privacy: .public) \(pixelDiagnostics, privacy: .public)")
             }
         }
     }

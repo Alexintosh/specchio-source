@@ -256,8 +256,29 @@ struct SettingsView: View {
         .onChange(of: settings.easyToolbarOverflowCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy toolbar overflow order changed value=\(newValue, privacy: .public)")
         }
+        .onChange(of: settings.easyToolbarStyle) { _, newValue in
+            let sanitizedValue = AppSettings.EasyToolbarStyle.sanitized(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy toolbar style sanitized requested=\(newValue, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+                settings.easyToolbarStyle = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy toolbar style changed style=\(sanitizedValue, privacy: .public)")
+        }
         .onChange(of: settings.easyToolbarAlwaysVisible) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy toolbar always visible changed enabled=\(newValue)")
+        }
+        .onChange(of: settings.easyFloatingToolbarAnchor) { _, newValue in
+            let sanitizedValue = AppSettings.EasyFloatingToolbarAnchor.sanitized(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy floating toolbar anchor sanitized requested=\(newValue, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+                settings.easyFloatingToolbarAnchor = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy floating toolbar anchor changed anchor=\(sanitizedValue, privacy: .public)")
+        }
+        .onChange(of: settings.easyFloatingToolbarAllowsDragging) { _, newValue in
+            SpecchioLogger.easyMode.info("[Settings] Easy floating toolbar dragging changed enabled=\(newValue)")
         }
         .onChange(of: settings.easyShowFPSCounter) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy status bar FPS counter changed enabled=\(newValue)")
@@ -306,6 +327,8 @@ struct SettingsView: View {
         SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
         SpecchioLogger.easyMode.info("[Settings] easyTrackpadSwipeToDragEnabled=\(self.settings.easyTrackpadSwipeToDragEnabled) mode=\(self.settings.easyTrackpadSwipeToDragMode, privacy: .public)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarCommandOrder legacy=\(self.settings.easyToolbarCommandOrder, privacy: .public) visible=\(self.settings.easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(self.settings.easyToolbarOverflowCommandOrder, privacy: .public)")
+        SpecchioLogger.easyMode.info("[Settings] easyToolbarStyle=\(self.settings.easyToolbarStyle, privacy: .public)")
+        SpecchioLogger.easyMode.info("[Settings] easyFloatingToolbarAnchor=\(self.settings.easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(self.settings.easyFloatingToolbarAllowsDragging)")
         SpecchioLogger.easyMode.info("[Settings] easyShowFPSCounter=\(self.settings.easyShowFPSCounter)")
         SpecchioLogger.easyMode.info("[Settings] easyReplayKitH264TargetFPS=\(self.settings.easyReplayKitH264TargetFPS)")
         let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: self.settings.easyAirPlayQuality)
@@ -453,6 +476,24 @@ struct SettingsView: View {
 
     private var easyToolbarSection: some View {
         Section("Easy Toolbar") {
+            Picker("Toolbar Style", selection: $settings.easyToolbarStyle) {
+                ForEach(AppSettings.EasyToolbarStyle.allowedValues, id: \.self) { value in
+                    Text(AppSettings.EasyToolbarStyle.label(for: value))
+                        .tag(value)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if AppSettings.EasyToolbarStyle.sanitized(settings.easyToolbarStyle) == AppSettings.EasyToolbarStyle.floating {
+                Picker("Floating Toolbar Anchor", selection: $settings.easyFloatingToolbarAnchor) {
+                    ForEach(AppSettings.EasyFloatingToolbarAnchor.allowedValues, id: \.self) { value in
+                        Text(AppSettings.EasyFloatingToolbarAnchor.label(for: value))
+                            .tag(value)
+                    }
+                }
+                Toggle("Drag Window from Toolbar", isOn: $settings.easyFloatingToolbarAllowsDragging)
+            }
+
             EasyToolbarOrderSettingsView(
                 legacyStorageValue: Binding(
                     get: { settings.easyToolbarCommandOrder },

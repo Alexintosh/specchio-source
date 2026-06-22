@@ -1020,6 +1020,32 @@ final class AirPlayProtocolTests: XCTestCase {
         XCTAssertEqual(session.phase, .setupReplyProviderMissing(version: 3, mode: 2, requestBytes: 16))
     }
 
+    func testFairPlaySetupFailureDescriptionReportsUnavailableProvider() {
+        var session = AirPlayFairPlaySession(
+            provider: nil,
+            providerDiagnosticDescription: "failed(bundle-frameworks: incompatible architecture)"
+        )
+        var body = Data([0x46, 0x50, 0x4c, 0x59, 0x03, 0x01, 0x02, 0x00])
+        body.append(Data([0x00, 0x00, 0x00, 0x82, 0x02, 0x00, 0x02, 0x00]))
+
+        _ = session.handleFPSetup(AirPlayControlRequest(
+            method: "POST",
+            path: "/fp-setup",
+            protocolVersion: "RTSP/1.0",
+            headers: ["X-Apple-ET": "32"],
+            body: body
+        ))
+
+        XCTAssertEqual(
+            session.providerDiagnosticDescription,
+            "failed(bundle-frameworks: incompatible architecture)"
+        )
+        XCTAssertEqual(
+            session.setupFailureDescription,
+            "AirPlay FairPlay provider is unavailable; encrypted video cannot be decoded on this Mac."
+        )
+    }
+
     func testFairPlayKeyMessageIsRecognizedButProviderRemainsMissing() {
         var session = AirPlayFairPlaySession(provider: nil)
         var body = Data(repeating: 0, count: 164)
@@ -1376,6 +1402,28 @@ final class AirPlayProtocolTests: XCTestCase {
         )
 
         XCTAssertTrue(candidates.isEmpty)
+    }
+
+    func testFairPlayProviderLookupReportsLoadFailureDiagnostic() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Specchio-BadFairPlayProvider-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let invalidProvider = directory.appendingPathComponent("libfairplay.dylib")
+        try Data("not a dylib".utf8).write(to: invalidProvider)
+
+        let lookup = AirPlayFairPlayExternalProvider.lookupFromEnvironment(
+            environment: ["SPECCHIO_AIRPLAY_FAIRPLAY_PROVIDER": invalidProvider.path],
+            bundledProviderDirectory: nil,
+            applicationSupportDirectory: nil
+        )
+
+        XCTAssertNil(lookup.provider)
+        XCTAssertTrue(lookup.diagnosticDescription.hasPrefix("failed(environment:"))
+        XCTAssertTrue(lookup.diagnosticDescription.contains("Could not load FairPlay provider"))
     }
 
     func testFairPlayProviderLoadsFairPlayABIFromExternalDylib() throws {

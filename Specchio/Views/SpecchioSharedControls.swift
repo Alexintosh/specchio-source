@@ -79,6 +79,18 @@ struct SpecchioPrimaryButton: View {
 
 enum SpecchioPhoneWindowMetrics {
     static let defaultPhoneScreenSize = CGSize(width: 390, height: 844)
+    static let easyModeLaunchPhoneScreenSize = CGSize(width: 333, height: 729)
+    static let easyModeLaunchMeasurementSource = "live-AX-main-window-2026-06-12"
+
+    static func preferredLaunchPhoneScreenSize(rotationDegrees: Int = 0) -> CGSize {
+        phoneScreenSize(easyModeLaunchPhoneScreenSize, rotatedBy: rotationDegrees)
+    }
+
+    private static func phoneScreenSize(_ size: CGSize, rotatedBy degrees: Int) -> CGSize {
+        let rotation = ((degrees % 360) + 360) % 360
+        guard rotation == 90 || rotation == 270 else { return size }
+        return CGSize(width: size.height, height: size.width)
+    }
 }
 
 enum SpecchioWindowAspectPolicy: Equatable {
@@ -128,13 +140,15 @@ enum SpecchioPresentationWindowChrome {
         to window: NSWindow,
         reason: String,
         alwaysOnTop: Bool = currentAlwaysOnTopSetting(),
-        standardControlsVisible: Bool = false
+        standardControlsVisible: Bool = false,
+        standardTitlebarEnabled: Bool? = nil
     ) {
         apply(
             to: window,
             reason: "\(reason)-immediate",
             alwaysOnTop: alwaysOnTop,
-            standardControlsVisible: standardControlsVisible
+            standardControlsVisible: standardControlsVisible,
+            standardTitlebarEnabled: standardTitlebarEnabled
         )
         DispatchQueue.main.async { [weak window] in
             guard let window else {
@@ -145,7 +159,8 @@ enum SpecchioPresentationWindowChrome {
                 to: window,
                 reason: "\(reason)-next-runloop",
                 alwaysOnTop: currentAlwaysOnTopSetting(),
-                standardControlsVisible: standardControlsVisible
+                standardControlsVisible: standardControlsVisible,
+                standardTitlebarEnabled: standardTitlebarEnabled
             )
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak window] in
@@ -157,7 +172,8 @@ enum SpecchioPresentationWindowChrome {
                 to: window,
                 reason: "\(reason)-after-focus-paint",
                 alwaysOnTop: currentAlwaysOnTopSetting(),
-                standardControlsVisible: standardControlsVisible
+                standardControlsVisible: standardControlsVisible,
+                standardTitlebarEnabled: standardTitlebarEnabled
             )
         }
     }
@@ -166,47 +182,56 @@ enum SpecchioPresentationWindowChrome {
         to window: NSWindow,
         reason: String,
         alwaysOnTop: Bool = currentAlwaysOnTopSetting(),
-        standardControlsVisible: Bool = false
+        standardControlsVisible: Bool = false,
+        standardTitlebarEnabled: Bool? = nil
     ) {
+        let requestedStandardTitlebar = standardTitlebarEnabled ?? standardControlsVisible
+
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = false
         window.level = alwaysOnTop ? .floating : .normal
-        window.styleMask.insert(.fullSizeContentView)
+        window.styleMask.insert(.resizable)
+
+        let beforeTitled = window.styleMask.contains(.titled)
+        let beforeFullSizeContent = window.styleMask.contains(.fullSizeContentView)
+        let beforeResizable = window.styleMask.contains(.resizable)
+        let beforeContentHeight = window.contentRect(forFrameRect: window.frame).height
+        let beforeLayoutHeight = window.contentLayoutRect.height
+
+        window.toolbar?.isVisible = false
+        window.toolbar?.showsBaselineSeparator = false
+
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.styleMask.remove(.fullSizeContentView)
+        window.styleMask.remove(.titled)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.toolbar?.isVisible = false
-        window.toolbar?.showsBaselineSeparator = false
-        window.standardWindowButton(.closeButton)?.isHidden = !standardControlsVisible
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = !standardControlsVisible
-        window.standardWindowButton(.zoomButton)?.isHidden = !standardControlsVisible
+
         window.isMovableByWindowBackground = false
 
         applyTransparentBacking(to: window.contentView, reason: reason, source: "contentView")
-        applyTransparentBacking(to: window.contentView?.superview, reason: reason, source: "contentSuperview")
-        applyTransparentFrameSubviews(for: window, reason: reason)
+        logNativeChromeDiagnostics(for: window, reason: reason)
 
-        SpecchioLogger.easyMode.info("[SpecchioPresentationWindowChrome] applied reason=\(reason, privacy: .public) alwaysOnTop=\(alwaysOnTop) standardControlsVisible=\(standardControlsVisible) titled=\(window.styleMask.contains(.titled)) fullSizeContent=\(window.styleMask.contains(.fullSizeContentView)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) closeHidden=\(window.standardWindowButton(.closeButton)?.isHidden ?? true) miniaturizeHidden=\(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true) zoomHidden=\(window.standardWindowButton(.zoomButton)?.isHidden ?? true) titlebarTransparent=\(window.titlebarAppearsTransparent) separatorStyle=\(String(describing: window.titlebarSeparatorStyle), privacy: .public) windowOpaque=\(window.isOpaque) windowLevel=\(window.level.rawValue) contentLayer=\(window.contentView?.layer != nil) frameLayer=\(window.contentView?.superview?.layer != nil)")
+        let afterContentHeight = window.contentRect(forFrameRect: window.frame).height
+        let afterLayoutHeight = window.contentLayoutRect.height
+        SpecchioLogger.easyMode.warning("[SpecchioPresentationWindowChrome] titlebar policy reason=\(reason, privacy: .public) branch=titlebarless-floating-only controlsVisible=\(standardControlsVisible) requestedStandardTitlebar=\(requestedStandardTitlebar) beforeTitled=\(beforeTitled) afterTitled=\(window.styleMask.contains(.titled)) beforeFullSizeContent=\(beforeFullSizeContent) afterFullSizeContent=\(window.styleMask.contains(.fullSizeContentView)) beforeResizable=\(beforeResizable) afterResizable=\(window.styleMask.contains(.resizable)) beforeContentHeight=\(beforeContentHeight) beforeLayoutHeight=\(beforeLayoutHeight) beforeTopBandHeight=\(beforeContentHeight - beforeLayoutHeight) afterContentHeight=\(afterContentHeight) afterLayoutHeight=\(afterLayoutHeight) afterTopBandHeight=\(afterContentHeight - afterLayoutHeight)")
+
+        SpecchioLogger.easyMode.info("[SpecchioPresentationWindowChrome] applied reason=\(reason, privacy: .public) alwaysOnTop=\(alwaysOnTop) standardControlsVisible=\(standardControlsVisible) standardTitlebarEnabled=false titled=\(window.styleMask.contains(.titled)) fullSizeContent=\(window.styleMask.contains(.fullSizeContentView)) resizable=\(window.styleMask.contains(.resizable)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) closeHidden=\(window.standardWindowButton(.closeButton)?.isHidden ?? true) miniaturizeHidden=\(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true) zoomHidden=\(window.standardWindowButton(.zoomButton)?.isHidden ?? true) titlebarTransparent=\(window.titlebarAppearsTransparent) separatorStyle=\(String(describing: window.titlebarSeparatorStyle), privacy: .public) windowOpaque=\(window.isOpaque) windowLevel=\(window.level.rawValue) contentLayer=\(window.contentView?.layer != nil) frameLayer=\(window.contentView?.superview?.layer != nil)")
+    }
+
+    static func installNativeDebugOverlays(
+        to window: NSWindow,
+        reason: String
+    ) {
+        logNativeChromeDiagnostics(for: window, reason: reason)
     }
 
     private static func currentAlwaysOnTopSetting() -> Bool {
         UserDefaults.standard.bool(forKey: AppSettings.Keys.alwaysOnTop)
-    }
-
-    private static func applyTransparentFrameSubviews(for window: NSWindow, reason: String) {
-        guard let frameView = window.contentView?.superview else {
-            SpecchioLogger.easyMode.info("[SpecchioPresentationWindowChrome] frame subviews skipped reason=\(reason, privacy: .public) branch=no-frame-view")
-            return
-        }
-
-        for (index, subview) in frameView.subviews.enumerated() where subview !== window.contentView {
-            applyTransparentBacking(
-                to: subview,
-                reason: reason,
-                source: "frameSubview\(index)-\(String(describing: type(of: subview)))"
-            )
-        }
     }
 
     private static func applyTransparentBacking(to view: NSView?, reason: String, source: String) {
@@ -220,6 +245,14 @@ enum SpecchioPresentationWindowChrome {
         view.layer?.isOpaque = false
         SpecchioLogger.easyMode.debug("[SpecchioPresentationWindowChrome] backing clear reason=\(reason, privacy: .public) source=\(source, privacy: .public) viewClass=\(String(describing: type(of: view)), privacy: .public) wantsLayer=\(view.wantsLayer) hasLayer=\(view.layer != nil)")
     }
+
+    private static func logNativeChromeDiagnostics(for window: NSWindow, reason: String) {
+        let contentRect = window.contentRect(forFrameRect: window.frame)
+        let layoutRect = window.contentLayoutRect
+        let frameView = window.contentView?.superview
+        SpecchioLogger.easyMode.warning("[SpecchioNativeChromeDebug] diagnostics reason=\(reason, privacy: .public) branch=log-only-no-native-overlays contentHeight=\(contentRect.height) layoutHeight=\(layoutRect.height) topBandHeight=\(contentRect.height - layoutRect.height) frameViewClass=\(String(describing: frameView.map { type(of: $0) }), privacy: .public) frameViewWidth=\(frameView?.bounds.width ?? -1) frameViewHeight=\(frameView?.bounds.height ?? -1)")
+    }
+
 }
 
 struct SpecchioWindowChromeModifier: ViewModifier {
@@ -227,16 +260,27 @@ struct SpecchioWindowChromeModifier: ViewModifier {
     var chromeStyle: SpecchioWindowChromeStyle = .standard
     var alwaysOnTop = false
     var presentationStandardControlsVisible = false
+    var presentationStandardTitlebarEnabled = false
 
     func body(content: Content) -> some View {
         toolbarStyledContent(content)
-            .frame(minWidth: 300, idealWidth: aspectPolicy.idealWidth)
+            .frame(minWidth: minimumFrameWidth, idealWidth: aspectPolicy.idealWidth)
             .background(SpecchioWindowAccessor(
                 aspectPolicy: aspectPolicy,
                 chromeStyle: chromeStyle,
                 alwaysOnTop: alwaysOnTop,
-                presentationStandardControlsVisible: presentationStandardControlsVisible
+                presentationStandardControlsVisible: presentationStandardControlsVisible,
+                presentationStandardTitlebarEnabled: presentationStandardTitlebarEnabled
             ))
+    }
+
+    private var minimumFrameWidth: CGFloat {
+        switch chromeStyle {
+        case .standard:
+            return 300
+        case .iPhoneMirroringPresentation:
+            return SpecchioPhoneWindowMetrics.preferredLaunchPhoneScreenSize().width
+        }
     }
 
     @ViewBuilder
@@ -269,6 +313,7 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
     let chromeStyle: SpecchioWindowChromeStyle
     let alwaysOnTop: Bool
     let presentationStandardControlsVisible: Bool
+    let presentationStandardTitlebarEnabled: Bool
 
     final class AspectRatioView: NSView {
         var aspectPolicy: SpecchioWindowAspectPolicy = .disabled {
@@ -281,6 +326,7 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
         var chromeStyle: SpecchioWindowChromeStyle = .standard
         var alwaysOnTop = false
         var presentationStandardControlsVisible = false
+        var presentationStandardTitlebarEnabled = false
         private var isAdjusting = false
         private var pendingContentWidth: CGFloat?
         private var isResizeScheduled = false
@@ -306,7 +352,7 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
             window.titlebarAppearsTransparent = true
             window.hasShadow = true
             applyChromeStyle(to: window, reason: reason)
-            SpecchioLogger.easyMode.info("[SpecchioWindowChrome] configured reason=\(reason) policy=\(self.aspectPolicy.logDescription, privacy: .public) chromeStyle=\(self.chromeStyle.logName, privacy: .public) alwaysOnTop=\(self.alwaysOnTop) presentationStandardControlsVisible=\(self.presentationStandardControlsVisible) toolbarPresent=\(window.toolbar != nil) toolbarVisible=\(window.toolbar?.isVisible ?? false) boundsWidth=\(self.bounds.width) boundsHeight=\(self.bounds.height)")
+            SpecchioLogger.easyMode.info("[SpecchioWindowChrome] configured reason=\(reason) policy=\(self.aspectPolicy.logDescription, privacy: .public) chromeStyle=\(self.chromeStyle.logName, privacy: .public) alwaysOnTop=\(self.alwaysOnTop) presentationStandardControlsVisible=\(self.presentationStandardControlsVisible) presentationStandardTitlebarEnabled=\(self.presentationStandardTitlebarEnabled) toolbarPresent=\(window.toolbar != nil) toolbarVisible=\(window.toolbar?.isVisible ?? false) boundsWidth=\(self.bounds.width) boundsHeight=\(self.bounds.height)")
 
             NotificationCenter.default.removeObserver(
                 self,
@@ -454,9 +500,10 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
                     to: window,
                     reason: "SpecchioWindowChrome-\(reason)",
                     alwaysOnTop: alwaysOnTop,
-                    standardControlsVisible: presentationStandardControlsVisible
+                    standardControlsVisible: presentationStandardControlsVisible,
+                    standardTitlebarEnabled: presentationStandardTitlebarEnabled
                 )
-                SpecchioLogger.easyMode.info("[SpecchioWindowChrome] style branch=iPhoneMirroringPresentation reason=\(reason, privacy: .public) alwaysOnTop=\(self.alwaysOnTop) presentationStandardControlsVisible=\(self.presentationStandardControlsVisible) titled=\(window.styleMask.contains(.titled)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) fullSizeContent=\(window.styleMask.contains(.fullSizeContentView)) closeHidden=\(window.standardWindowButton(.closeButton)?.isHidden ?? true) miniaturizeHidden=\(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true) zoomHidden=\(window.standardWindowButton(.zoomButton)?.isHidden ?? true) hasShadow=\(window.hasShadow) transparentPanelBacking=\(!window.isOpaque) windowLevel=\(window.level.rawValue)")
+                SpecchioLogger.easyMode.info("[SpecchioWindowChrome] style branch=iPhoneMirroringPresentation reason=\(reason, privacy: .public) alwaysOnTop=\(self.alwaysOnTop) presentationStandardControlsVisible=\(self.presentationStandardControlsVisible) presentationStandardTitlebarEnabled=\(self.presentationStandardTitlebarEnabled) titled=\(window.styleMask.contains(.titled)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) fullSizeContent=\(window.styleMask.contains(.fullSizeContentView)) closeHidden=\(window.standardWindowButton(.closeButton)?.isHidden ?? true) miniaturizeHidden=\(window.standardWindowButton(.miniaturizeButton)?.isHidden ?? true) zoomHidden=\(window.standardWindowButton(.zoomButton)?.isHidden ?? true) hasShadow=\(window.hasShadow) transparentPanelBacking=\(!window.isOpaque) windowLevel=\(window.level.rawValue)")
             }
         }
 
@@ -471,6 +518,7 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
         view.chromeStyle = chromeStyle
         view.alwaysOnTop = alwaysOnTop
         view.presentationStandardControlsVisible = presentationStandardControlsVisible
+        view.presentationStandardTitlebarEnabled = presentationStandardTitlebarEnabled
         return view
     }
 
@@ -479,6 +527,7 @@ struct SpecchioWindowAccessor: NSViewRepresentable {
         nsView.chromeStyle = chromeStyle
         nsView.alwaysOnTop = alwaysOnTop
         nsView.presentationStandardControlsVisible = presentationStandardControlsVisible
+        nsView.presentationStandardTitlebarEnabled = presentationStandardTitlebarEnabled
         nsView.configureWindow(reason: "updateNSView")
     }
 }

@@ -127,7 +127,10 @@ struct EasyModeView: View {
     @AppStorage(AppSettings.Keys.easyToolbarCommandOrder) private var easyToolbarCommandOrder = EasyToolbarCommand.defaultOrderStorageValue
     @AppStorage(AppSettings.Keys.easyToolbarVisibleCommandOrder) private var easyToolbarVisibleCommandOrder = EasyToolbarCommand.defaultVisibleOrderStorageValue
     @AppStorage(AppSettings.Keys.easyToolbarOverflowCommandOrder) private var easyToolbarOverflowCommandOrder = EasyToolbarCommand.defaultOverflowOrderStorageValue
+    @AppStorage(AppSettings.Keys.easyToolbarStyle) private var easyToolbarStyle = AppSettings.Defaults.easyToolbarStyle
     @AppStorage(AppSettings.Keys.easyToolbarAlwaysVisible) private var easyToolbarAlwaysVisible = AppSettings.Defaults.easyToolbarAlwaysVisible
+    @AppStorage(AppSettings.Keys.easyFloatingToolbarAnchor) private var easyFloatingToolbarAnchor = AppSettings.Defaults.easyFloatingToolbarAnchor
+    @AppStorage(AppSettings.Keys.easyFloatingToolbarAllowsDragging) private var easyFloatingToolbarAllowsDragging = AppSettings.Defaults.easyFloatingToolbarAllowsDragging
     @AppStorage(AppSettings.Keys.autoUnlock) private var easyAutoUnlockEnabled = false
     @AppStorage(AppSettings.Keys.easyReplayKitH264TargetFPS) private var easyReplayKitH264TargetFPS = AppSettings.Defaults.easyReplayKitH264TargetFPS
     @AppStorage(AppSettings.Keys.easyAirPlayQuality) private var easyAirPlayQuality = AppSettings.Defaults.easyAirPlayQuality
@@ -141,6 +144,7 @@ struct EasyModeView: View {
     @StateObject private var setupTutorial = SpecchioSetupTutorialWindowController()
     @StateObject private var connectionTutorialPanel = EasyConnectionTutorialPanelController()
     @StateObject private var airPlayPINPanel = EasyAirPlayPINPanelController()
+    @StateObject private var floatingToolbarPanel = EasyFloatingToolbarPanelController()
     @ObservedObject private var licenseManager = LicenseManager.shared
     @State private var mouseLocation: CGPoint = .zero
     @State private var viewSize: CGSize = .zero
@@ -149,6 +153,7 @@ struct EasyModeView: View {
     @State private var controlBarWidth: CGFloat = 0
     @State private var phoneSurfaceSize: CGSize = .zero
     @State private var phoneSurfaceAvailableSize: CGSize = .zero
+    @State private var lastAirPlayRenderGeometrySignature: String?
     @State private var replayKitStartupTask: Task<Void, Never>?
     @State private var replayKitStartupGeneration = 0
     @State private var usbNativeIsolationStartupTask: Task<Void, Never>?
@@ -747,6 +752,14 @@ struct EasyModeView: View {
         )
     }
 
+    private var sanitizedEasyToolbarStyle: String {
+        AppSettings.EasyToolbarStyle.sanitized(easyToolbarStyle)
+    }
+
+    private var usesStandardToolbarStyle: Bool {
+        sanitizedEasyToolbarStyle == AppSettings.EasyToolbarStyle.standard
+    }
+
     private var presentationHeaderMinimumContentWidth: CGFloat {
         let layout = easyToolbarLayout
         return EasyMirroringPresentationMetrics.minimumContentWidth(
@@ -766,37 +779,52 @@ struct EasyModeView: View {
     }
 
     private func easyModeContent(size: CGSize, safeAreaInsets: EdgeInsets) -> some View {
+        let usesStandardToolbar = usesStandardToolbarStyle
+        let standardTopChromeHeight = usesStandardToolbar ? EasyMirroringPresentationMetrics.reservedTopChromeHeight : 0
+        let standardMinimumContentWidth = usesStandardToolbar ? presentationHeaderMinimumContentWidth : 0
+        let standardTitlebarEnabled = usesStandardToolbar
+        let standardControlsVisible = usesStandardToolbar && isPresentationHeaderVisible
         let content = VStack(spacing: 0) {
-            presentationHeader
+            if usesStandardToolbar {
+                presentationHeader
+            }
 
             phoneSurfaceContainer
         }
         .background(.clear)
         .background {
-            EasyMirroringPresentationPanelChrome(isVisible: isPresentationHeaderVisible)
+            if usesStandardToolbar {
+                EasyMirroringPresentationPanelChrome(isVisible: isPresentationHeaderVisible)
+            }
         }
         .background {
-            EasyPresentationWindowFocusObserver(standardControlsVisible: isPresentationHeaderVisible) { isKey, isApplicationActive, reason in
-                handlePresentationWindowFocusChanged(
-                    isKey: isKey,
-                    isApplicationActive: isApplicationActive,
-                    reason: reason
-                )
+            if usesStandardToolbar {
+                EasyPresentationWindowFocusObserver(
+                    standardControlsVisible: isPresentationHeaderVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
+                ) { isKey, isApplicationActive, reason in
+                    handlePresentationWindowFocusChanged(
+                        isKey: isKey,
+                        isApplicationActive: isApplicationActive,
+                        reason: reason
+                    )
+                }
             }
         }
         .contentShape(Rectangle())
         .ignoresSafeArea(.container, edges: [.all])
         .background(EasyWindowAspectRatioAccessor(
             displayedPhoneSize: displayedPhoneScreenSize,
-            topChromeHeight: EasyMirroringPresentationMetrics.reservedTopChromeHeight,
+            topChromeHeight: standardTopChromeHeight,
             contentSize: size,
             phoneSurfaceAvailableSize: phoneSurfaceAvailableSize,
             videoFrameSize: videoFrameSizeForSizing,
             rotationDegrees: phoneDisplayRotationDegrees,
-            minimumTopChromeHeight: EasyMirroringPresentationMetrics.reservedTopChromeHeight,
-            minimumContentWidth: presentationHeaderMinimumContentWidth,
+            minimumTopChromeHeight: standardTopChromeHeight,
+            minimumContentWidth: standardMinimumContentWidth,
             countsWindowLayoutInsetAsChrome: false,
-            standardControlsVisible: isPresentationHeaderVisible
+            standardControlsVisible: standardControlsVisible,
+            standardTitlebarEnabled: standardTitlebarEnabled
         ))
 
         return observeEasyModeContent(content, size: size, safeAreaInsets: safeAreaInsets)
@@ -805,6 +833,8 @@ struct EasyModeView: View {
             }
             .background {
                 EasyConnectionTutorialHostWindowReader { window, reason in
+                    floatingToolbarPanel.attachHostWindow(window, reason: reason)
+                    syncFloatingToolbarPanel(reason: "host-window-\(reason)")
                     connectionTutorialPanel.attachHostWindow(window, reason: reason)
                     airPlayPINPanel.attachHostWindow(window, reason: reason)
                     presentAirPlayPINPanelIfNeeded(source: "host-window-\(reason)")
@@ -884,11 +914,14 @@ struct EasyModeView: View {
             handleGeometryChanged(size: newSize, safeAreaInsets: safeAreaInsets)
         }
         .onChange(of: isPresentationHeaderVisible) { _, isVisible in
+            guard usesStandardToolbarStyle else { return }
             SpecchioLogger.easyMode.info("[EasyPresentationHeader] visibility changed visible=\(isVisible) appActive=\(isPresentationApplicationActive) windowKey=\(isPresentationWindowKey) topEdge=\(isPresentationHeaderRevealedByTopEdge)")
         }
         .background {
-            EasyPresentationHeaderHoverTracker { location, reason in
-                handlePresentationHeaderTrackingHover(location: location, reason: reason)
+            if usesStandardToolbarStyle {
+                EasyPresentationHeaderHoverTracker { location, reason in
+                    handlePresentationHeaderTrackingHover(location: location, reason: reason)
+                }
             }
         }
         .onContinuousHover { (phase: HoverPhase) in
@@ -944,6 +977,7 @@ struct EasyModeView: View {
         }
         .onChange(of: replayKitPrivacyBlurEnabled) { _, newValue in
             handleReplayKitPrivacyBlurChanged(newValue)
+            syncFloatingToolbarPanel(reason: "privacy-blur-changed")
         }
         .onChange(of: pointerSpikeVariant) { _, newValue in
             handlePointerSpikeVariantChanged(newValue)
@@ -961,17 +995,29 @@ struct EasyModeView: View {
         .onChange(of: easyToolbarCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] legacy toolbar order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "legacy-order-changed")
+            syncFloatingToolbarPanel(reason: "legacy-order-changed")
         }
         .onChange(of: easyToolbarVisibleCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] toolbar visible order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "visible-order-changed")
+            syncFloatingToolbarPanel(reason: "visible-order-changed")
         }
         .onChange(of: easyToolbarOverflowCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] toolbar overflow order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "overflow-order-changed")
+            syncFloatingToolbarPanel(reason: "overflow-order-changed")
+        }
+        .onChange(of: easyToolbarStyle) { _, newValue in
+            handleToolbarStyleChanged(newValue)
         }
         .onChange(of: easyToolbarAlwaysVisible) { _, newValue in
             handleToolbarAlwaysVisibleChanged(newValue)
+        }
+        .onChange(of: easyFloatingToolbarAnchor) { _, newValue in
+            handleFloatingToolbarAnchorChanged(newValue)
+        }
+        .onChange(of: easyFloatingToolbarAllowsDragging) { _, newValue in
+            handleFloatingToolbarDraggingChanged(newValue)
         }
     }
 
@@ -1038,10 +1084,16 @@ struct EasyModeView: View {
         normalizeEasyToolbarLayoutIfNeeded(reason: "appear")
         applyEasyPointerDefaultsIfNeeded()
         handleAirPlayQualityChanged(easyAirPlayQuality)
+        let toolbarStyle = sanitizedEasyToolbarStyle
+        let reservedTopChrome = toolbarStyle == AppSettings.EasyToolbarStyle.standard ? EasyMirroringPresentationMetrics.reservedTopChromeHeight : 0
+        let headerPosition = toolbarStyle == AppSettings.EasyToolbarStyle.standard ? "in-window-header" : "external-panel"
+        let toolbarReveal = easyToolbarAlwaysVisible ? "always-visible" : "top-edge"
         SpecchioLogger.easyMode.info("[EasyModeView] appeared width=\(size.width) height=\(size.height) safeLeft=\(safeAreaInsets.leading) safeRight=\(safeAreaInsets.trailing) safeBottom=\(safeAreaInsets.bottom)")
-        SpecchioLogger.easyMode.info("[EasyModeView] presentation chrome=iPhoneMirroring branch=transparent-floating-panel toolbarReveal=top-edge reservedTopChrome=\(EasyMirroringPresentationMetrics.reservedTopChromeHeight) headerPosition=above-phone")
+        SpecchioLogger.easyMode.info("[EasyModeView] presentation chrome=iPhoneMirroring branch=toolbar-style-\(toolbarStyle, privacy: .public) toolbarReveal=\(toolbarReveal, privacy: .public) reservedTopChrome=\(reservedTopChrome) headerPosition=\(headerPosition, privacy: .public)")
         SpecchioLogger.easyMode.info("[EasyModeView] preferences clutchEnabled=\(easyMouseClutchMode) hideLocalCursor=\(easyHideLocalCursor) pointerSpikeEnabled=\(easyPointerSpikeEnabled) pointerSpikeOverlayEnabled=\(easyPointerSpikeOverlayEnabled) pointerSpikeVariant=\(pointerSpikeVariant) trackpadSwipeToDrag=\(easyTrackpadSwipeToDragEnabled) trackpadSwipeMode=\(easyTrackpadSwipeToDragMode, privacy: .public)")
-        SpecchioLogger.easyMode.info("[EasyModeView] toolbar layout visible=\(easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(easyToolbarOverflowCommandOrder, privacy: .public) legacy=\(easyToolbarCommandOrder, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyModeView] toolbar style=\(toolbarStyle, privacy: .public) layout visible=\(easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(easyToolbarOverflowCommandOrder, privacy: .public) legacy=\(easyToolbarCommandOrder, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] preferences initial anchor=\(easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(easyFloatingToolbarAllowsDragging)")
+        syncFloatingToolbarPanel(reason: "appear")
         SpecchioLogger.easyMode.info("[EasyModeView] ReplayKit H.264 target FPS preference=\(easyReplayKitH264TargetFPS)")
         let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: easyAirPlayQuality)
         SpecchioLogger.easyMode.info("[EasyModeView] AirPlay quality preference=\(easyAirPlayQuality, privacy: .public) display=\(airPlayPixels.width)x\(airPlayPixels.height)")
@@ -1083,6 +1135,7 @@ struct EasyModeView: View {
     private func handleDisappear() {
         SpecchioLogger.easyMode.info("[EasyModeView] disappeared; stopping Easy video receivers and suspending Bluetooth HID panel")
         isEasyModeVisible = false
+        floatingToolbarPanel.hide(reason: "EasyModeView disappeared")
         resetAllBluetoothAutoConnectVideoStartAttempts(reason: "EasyModeView disappeared")
         resetPresentationHeaderReveal(reason: "easy-mode-disappear")
         if appState.replayKitStream === stream {
@@ -1410,10 +1463,18 @@ struct EasyModeView: View {
         switch phase {
         case .active(let location):
             mouseLocation = location
-            updatePresentationHeaderTopEdge(location: location, reason: "swiftui-hover-active")
+            if usesStandardToolbarStyle {
+                updatePresentationHeaderTopEdge(location: location, reason: "swiftui-hover-active")
+            } else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] root hover active branch=logo-tracking x=\(location.x) y=\(location.y)")
+            }
         case .ended:
             mouseLocation = .zero
-            updatePresentationHeaderTopEdge(location: nil, reason: "swiftui-hover-ended")
+            if usesStandardToolbarStyle {
+                updatePresentationHeaderTopEdge(location: nil, reason: "swiftui-hover-ended")
+            } else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] root hover ended branch=logo-tracking")
+            }
         }
     }
 
@@ -1482,7 +1543,114 @@ struct EasyModeView: View {
     }
 
     private func handleToolbarAlwaysVisibleChanged(_ isAlwaysVisible: Bool) {
-        SpecchioLogger.easyMode.info("[EasyPresentationHeader] always-visible preference changed enabled=\(isAlwaysVisible) visible=\(isPresentationHeaderVisible) appActive=\(isPresentationApplicationActive) windowKey=\(isPresentationWindowKey) topEdge=\(isPresentationHeaderRevealedByTopEdge)")
+        SpecchioLogger.easyMode.info("[EasyToolbarStyle] always-visible preference changed enabled=\(isAlwaysVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public) visible=\(isEasyModeVisible)")
+        syncFloatingToolbarPanel(reason: "always-visible-preference-changed")
+    }
+
+    private func handleToolbarStyleChanged(_ value: String) {
+        let sanitizedValue = AppSettings.EasyToolbarStyle.sanitized(value)
+        if sanitizedValue != value {
+            SpecchioLogger.easyMode.info("[EasyToolbarStyle] style preference sanitized requested=\(value, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+            easyToolbarStyle = sanitizedValue
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyToolbarStyle] style preference changed style=\(sanitizedValue, privacy: .public) visible=\(isEasyModeVisible)")
+        if sanitizedValue == AppSettings.EasyToolbarStyle.floating {
+            resetPresentationHeaderReveal(reason: "toolbar-style-floating")
+        }
+        syncFloatingToolbarPanel(reason: "toolbar-style-changed")
+    }
+
+    private func handleFloatingToolbarAnchorChanged(_ value: String) {
+        let sanitizedValue = AppSettings.EasyFloatingToolbarAnchor.sanitized(value)
+        if sanitizedValue != value {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] anchor preference sanitized requested=\(value, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+            easyFloatingToolbarAnchor = sanitizedValue
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] anchor preference changed anchor=\(sanitizedValue, privacy: .public)")
+        syncFloatingToolbarPanel(reason: "anchor-preference-changed")
+    }
+
+    private func handleFloatingToolbarDraggingChanged(_ allowsDragging: Bool) {
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] dragging preference changed allowsDragging=\(allowsDragging)")
+        syncFloatingToolbarPanel(reason: "dragging-preference-changed")
+    }
+
+    private func syncFloatingToolbarPanel(reason: String) {
+        let layout = easyToolbarLayout
+        let visibleValue = EasyToolbarCommand.storageValue(for: layout.visibleCommands)
+        let overflowValue = EasyToolbarCommand.storageValue(for: layout.overflowCommands)
+        let sanitizedStyle = AppSettings.EasyToolbarStyle.sanitized(easyToolbarStyle)
+        if sanitizedStyle != easyToolbarStyle {
+            SpecchioLogger.easyMode.info("[EasyToolbarStyle] sync sanitized style reason=\(reason, privacy: .public) requested=\(easyToolbarStyle, privacy: .public) applied=\(sanitizedStyle, privacy: .public)")
+            easyToolbarStyle = sanitizedStyle
+            return
+        }
+        let sanitizedAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(easyFloatingToolbarAnchor)
+        if sanitizedAnchor != easyFloatingToolbarAnchor {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] sync sanitized anchor reason=\(reason, privacy: .public) requested=\(easyFloatingToolbarAnchor, privacy: .public) applied=\(sanitizedAnchor, privacy: .public)")
+            easyFloatingToolbarAnchor = sanitizedAnchor
+            return
+        }
+        guard sanitizedStyle == AppSettings.EasyToolbarStyle.floating else {
+            floatingToolbarPanel.update(
+                isVisible: false,
+                toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+                anchor: sanitizedAnchor,
+                allowsDragging: easyFloatingToolbarAllowsDragging,
+                layoutLog: "style=\(sanitizedStyle) visible=\(visibleValue) overflow=\(overflowValue)",
+                rootView: AnyView(EmptyView()),
+                reason: "\(reason)-standard-toolbar"
+            )
+            return
+        }
+        let toolbarPanel = floatingToolbarPanel
+        let windowControlState = toolbarPanel.windowControlState(reason: reason)
+        let content = EasyFloatingToolbarPanelContent(
+            visibleCommands: layout.visibleCommands,
+            overflowCommands: layout.overflowCommands,
+            bluetoothHIDPanel: bluetoothHIDPanel,
+            phoneDisplayRotationDegrees: phoneDisplayRotationDegrees,
+            replayKitPrivacyBlurEnabled: $replayKitPrivacyBlurEnabled,
+            showEasyShortcutHelp: $showEasyShortcutHelp,
+            easyAutoUnlockFeedback: $easyAutoUnlockFeedback,
+            windowControlState: windowControlState,
+            closeHostWindow: { [weak toolbarPanel] in
+                toolbarPanel?.performHostWindowClose(reason: "native-close-button")
+            },
+            miniaturizeHostWindow: { [weak toolbarPanel] in
+                toolbarPanel?.performHostWindowMiniaturize(reason: "native-miniaturize-button")
+            },
+            zoomHostWindow: { [weak toolbarPanel] in
+                toolbarPanel?.performHostWindowZoom(reason: "native-zoom-button")
+            },
+            allowsHostWindowDragging: easyFloatingToolbarAllowsDragging,
+            beginHostWindowDrag: { [weak toolbarPanel] event in
+                toolbarPanel?.beginHostWindowDrag(with: event, reason: "floating-toolbar-drag-surface")
+            },
+            updateHostWindowDrag: { [weak toolbarPanel] event in
+                toolbarPanel?.updateHostWindowDrag(with: event, reason: "floating-toolbar-drag-surface")
+            },
+            endHostWindowDrag: { [weak toolbarPanel] event in
+                toolbarPanel?.endHostWindowDrag(with: event, reason: "floating-toolbar-drag-surface")
+            },
+            rotateScreen: rotatePhoneDisplay,
+            disconnectStream: disconnectEasyVideoStream,
+            performEasyAutoUnlock: performEasyAutoUnlock
+        )
+
+        floatingToolbarPanel.update(
+            isVisible: isEasyModeVisible,
+            toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+            anchor: sanitizedAnchor,
+            allowsDragging: easyFloatingToolbarAllowsDragging,
+            layoutLog: "visible=\(visibleValue) overflow=\(overflowValue)",
+            rootView: AnyView(content),
+            reason: reason
+        )
     }
 
     private func performEasyAutoUnlock(source: String) {
@@ -1683,6 +1851,13 @@ struct EasyModeView: View {
 
         presentAirPlayConnectionTutorialIfNeeded(source: "AirPlay card selected")
         SpecchioLogger.easyMode.info("[EasyVideoCards] AirPlay card selected branch=advertise-only health=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public) advertising=\(airPlayStream.isAdvertising)")
+    }
+
+    private func refreshAirPlayAdvertisementFromCard(source: String) {
+        SpecchioLogger.easyMode.info("[EasyAirPlayRefresh] requested source=\(source, privacy: .public) visible=\(isEasyModeVisible) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) advertising=\(airPlayStream.isAdvertising) clientConnected=\(airPlayStream.isClientConnected) framePresent=\(airPlayStream.currentFrame != nil) health=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public) status=\(airPlayStream.statusMessage, privacy: .public)")
+        endUSBNativeIsolation(reason: "AirPlay manual refresh from \(source)", restartAirPlay: false)
+        appState.airPlayStream = airPlayStream
+        airPlayStream.refreshAdvertisement(source: "EasyMode \(source)")
     }
 
     private func handleUSBSourceCardAction() {
@@ -2604,6 +2779,7 @@ struct EasyModeView: View {
         let orientationChanges = isSidewaysRotation(currentRotation) != isSidewaysRotation(nextRotation)
         SpecchioLogger.easyMode.info("[EasyRotation] toggle selected source=\(source, privacy: .public) from=\(currentRotation) to=\(nextRotation) orientationChanges=\(orientationChanges) measuredSurfaceWidth=\(phoneSurfaceSize.width) measuredSurfaceHeight=\(phoneSurfaceSize.height) availableWidth=\(phoneSurfaceAvailableSize.width) availableHeight=\(phoneSurfaceAvailableSize.height)")
         phoneDisplayRotationDegrees = nextRotation
+        syncFloatingToolbarPanel(reason: "display-rotation-changed")
     }
 
     private func applyEasyPointerDefaultsIfNeeded() {
@@ -2617,6 +2793,17 @@ struct EasyModeView: View {
 
     private var phoneSurface: some View {
         ZStack {
+            if activeFrame == nil {
+                Color.black
+                    .accessibilityHidden(true)
+                    .onAppear {
+                        SpecchioLogger.easyMode.info("[EasyPresentation] waiting surface backing appeared branch=no-frame-window-background")
+                    }
+                    .onDisappear {
+                        SpecchioLogger.easyMode.info("[EasyPresentation] waiting surface backing disappeared branch=frame-present")
+                    }
+            }
+
             if let frame = activeFrame {
                 Image(decorative: frame, scale: 1.0)
                     .resizable()
@@ -2628,6 +2815,7 @@ struct EasyModeView: View {
                     )
                     .onAppear {
                         updatePhoneScreenSize(from: frame)
+                        logAirPlayRenderGeometryIfNeeded(frame, trigger: "active-frame-appear")
                     }
                     .onChange(of: stream.currentFrame) { _, newFrame in
                         if let newFrame {
@@ -2642,6 +2830,7 @@ struct EasyModeView: View {
                     .onChange(of: airPlayStream.currentFrame) { _, newFrame in
                         if let newFrame {
                             updatePhoneScreenSize(from: newFrame)
+                            logAirPlayRenderGeometryIfNeeded(newFrame, trigger: "airplay-frame-change")
                         }
                     }
 
@@ -2735,7 +2924,7 @@ struct EasyModeView: View {
         .background {
             if isPresentationHeaderVisible {
                 Rectangle()
-                    .fill(.ultraThinMaterial)
+                    .fill(Color.black.opacity(0.68))
             }
         }
         .background {
@@ -2924,6 +3113,55 @@ struct EasyModeView: View {
         )
     }
 
+    private func logAirPlayRenderGeometryIfNeeded(_ frame: CGImage, trigger: String) {
+        guard appState.activeVideoSource == .airPlay else {
+            return
+        }
+
+        let rawFrameSize = CGSize(width: frame.width, height: frame.height)
+        let displayedFrameSize = EasyWindowVideoSizing.displayedPhoneSize(
+            phoneScreenSize: rawFrameSize,
+            rotationDegrees: phoneDisplayRotationDegrees
+        )
+        let measuredSurfaceAvailable = phoneSurfaceSize.width > 0 && phoneSurfaceSize.height > 0
+        let surfaceSize = measuredSurfaceAvailable ? phoneSurfaceSize : displayedPhoneScreenSize
+        let surfaceSource = measuredSurfaceAvailable ? "measured" : "state-fallback"
+        guard displayedFrameSize.width > 0,
+              displayedFrameSize.height > 0,
+              surfaceSize.width > 0,
+              surfaceSize.height > 0 else {
+            SpecchioLogger.easyMode.info("[EasyAirPlayFrameLayout] skipped trigger=\(trigger, privacy: .public) reason=invalid-geometry frameWidth=\(rawFrameSize.width) frameHeight=\(rawFrameSize.height) displayedFrameWidth=\(displayedFrameSize.width) displayedFrameHeight=\(displayedFrameSize.height) surfaceWidth=\(surfaceSize.width) surfaceHeight=\(surfaceSize.height) surfaceSource=\(surfaceSource, privacy: .public)")
+            return
+        }
+
+        let widthScale = surfaceSize.width / displayedFrameSize.width
+        let heightScale = surfaceSize.height / displayedFrameSize.height
+        let aspectFitScale = min(widthScale, heightScale)
+        let aspectFitSize = CGSize(
+            width: displayedFrameSize.width * aspectFitScale,
+            height: displayedFrameSize.height * aspectFitScale
+        )
+        let horizontalInset = max(0, (surfaceSize.width - aspectFitSize.width) / 2)
+        let verticalInset = max(0, (surfaceSize.height - aspectFitSize.height) / 2)
+        let signature = [
+            "\(Int(rawFrameSize.width.rounded()))x\(Int(rawFrameSize.height.rounded()))",
+            "\(Int(surfaceSize.width.rounded()))x\(Int(surfaceSize.height.rounded()))",
+            "\(phoneDisplayRotationDegrees)",
+            formatGeometryValue(horizontalInset),
+            formatGeometryValue(verticalInset)
+        ].joined(separator: "|")
+        guard signature != lastAirPlayRenderGeometrySignature else {
+            return
+        }
+
+        lastAirPlayRenderGeometrySignature = signature
+        SpecchioLogger.easyMode.info("[EasyAirPlayFrameLayout] sampled trigger=\(trigger, privacy: .public) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) toolbarStyle=\(sanitizedEasyToolbarStyle, privacy: .public) rotation=\(phoneDisplayRotationDegrees) surfaceSource=\(surfaceSource, privacy: .public) rawFrameWidth=\(rawFrameSize.width) rawFrameHeight=\(rawFrameSize.height) displayedFrameWidth=\(displayedFrameSize.width) displayedFrameHeight=\(displayedFrameSize.height) surfaceWidth=\(surfaceSize.width) surfaceHeight=\(surfaceSize.height) aspectFitWidth=\(aspectFitSize.width) aspectFitHeight=\(aspectFitSize.height) horizontalInset=\(horizontalInset) verticalInset=\(verticalInset) phoneScreenWidth=\(phoneScreenSize.width) phoneScreenHeight=\(phoneScreenSize.height) videoGeometryReady=\(videoGeometryReady)")
+    }
+
+    private func formatGeometryValue(_ value: CGFloat) -> String {
+        String(format: "%.2f", Double(value))
+    }
+
     private func updatePhoneSurfaceSize(
         _ size: CGSize,
         availableSize: CGSize,
@@ -2940,6 +3178,9 @@ struct EasyModeView: View {
         SpecchioLogger.easyMode.info("[EasyGeometry] surface measured branch=\(layout.branch.rawValue, privacy: .public) surfaceWidth=\(size.width) surfaceHeight=\(size.height) availableWidth=\(availableSize.width) availableHeight=\(availableSize.height) rootWidth=\(viewSize.width) rootHeight=\(viewSize.height) controlBarHeight=\(controlBarHeight) horizontalUnused=\(layout.horizontalUnused) verticalUnused=\(layout.verticalUnused) leadingAlignedRightGap=\(layout.horizontalUnused) cornerBasis=short-edge cornerRadius=\(cornerRadius)")
         phoneSurfaceSize = size
         phoneSurfaceAvailableSize = availableSize
+        if let frame = airPlayStream.currentFrame {
+            logAirPlayRenderGeometryIfNeeded(frame, trigger: "surface-measured")
+        }
     }
 
     private func logPhoneSurfaceLayout(
@@ -3063,15 +3304,15 @@ struct EasyModeView: View {
     private var videoSourceControlStrip: some View {
         VStack(spacing: 10) {
             ForEach(videoSourceCards) { card in
-                Button {
-                    handleVideoSourceCardAction(card.kind)
-                } label: {
-                    EasyVideoSourceCard(state: card)
-                }
-                .buttonStyle(.plain)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .help(card.help)
-                .accessibilityLabel(card.accessibilityLabel)
+                EasyVideoSourceCard(
+                    state: card,
+                    primaryAction: {
+                        handleVideoSourceCardAction(card.kind)
+                    },
+                    refreshAction: card.kind == .airPlay ? {
+                        refreshAirPlayAdvertisementFromCard(source: "airplay-card-refresh-button")
+                    } : nil
+                )
             }
         }
         .frame(maxWidth: 420)
@@ -3083,6 +3324,8 @@ struct EasyModeView: View {
 
 private struct EasyVideoSourceCard: View {
     let state: EasyVideoSourceCardState
+    let primaryAction: () -> Void
+    let refreshAction: (() -> Void)?
 
     private var cardOpacity: Double {
         state.isDimmed ? 0.66 : 1.0
@@ -3099,7 +3342,65 @@ private struct EasyVideoSourceCard: View {
         return state.isDimmed ? 0.14 : 0.24
     }
 
+    private var showsTextAction: Bool {
+        state.kind != .airPlay
+    }
+
     var body: some View {
+        HStack(spacing: 12) {
+            Button {
+                primaryAction()
+            } label: {
+                mainContent
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(state.help)
+            .accessibilityLabel(state.accessibilityLabel)
+
+            if let refreshAction {
+                Button {
+                    SpecchioLogger.easyMode.info("[EasyAirPlayRefresh] card refresh button selected status=\(state.status, privacy: .public) detail=\(state.detail, privacy: .public)")
+                    refreshAction()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(state.dotColor)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .help("Refresh AirPlay advertisement")
+                .accessibilityLabel("Refresh AirPlay advertisement")
+            }
+
+            if showsTextAction {
+                Button {
+                    primaryAction()
+                } label: {
+                    Text(state.actionTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(state.dotColor)
+                        .frame(minWidth: 52, alignment: .trailing)
+                }
+                .buttonStyle(.plain)
+                .help(state.help)
+                .accessibilityLabel(state.actionTitle)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(state.dotColor.opacity(strokeOpacity), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .saturation(cardSaturation)
+        .opacity(cardOpacity)
+    }
+
+    private var mainContent: some View {
         HStack(spacing: 12) {
             Image(systemName: state.systemImage)
                 .font(.system(size: 22, weight: .semibold))
@@ -3133,23 +3434,7 @@ private struct EasyVideoSourceCard: View {
                     .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-
-            Text(state.actionTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundColor(state.dotColor)
-                .frame(minWidth: 52, alignment: .trailing)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(state.dotColor.opacity(strokeOpacity), lineWidth: 1)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .saturation(cardSaturation)
-        .opacity(cardOpacity)
     }
 }
 
@@ -3296,7 +3581,7 @@ private struct EasyConnectionTutorialPanel: View {
         }
         .padding(18)
         .frame(width: size.width, height: size.height, alignment: .topLeading)
-        .background(.ultraThinMaterial)
+        .background(.regularMaterial)
         .clipShape(panelShape)
         .overlay {
             panelShape
@@ -3362,21 +3647,14 @@ private struct EasyConnectionTutorialPanel: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 mouseRequiredCard
-
-                TutorialVideoPlayerView(
-                    asset: videoAsset,
-                    displayHeight: panelVideoHeight,
-                    source: "easy-connection-\(stage.logName)"
-                )
-
-                mouseSetupSteps
                 mouseShortcutCard
+                mouseManualSetupSection
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.trailing, 4)
         }
         .onAppear {
-            SpecchioLogger.easyMode.warning("[EasyConnectionTutorialMouseSetup] content displayed requiredAssistiveTouch=true mouseOnShortcut=\(Self.mouseOnShortcutURL.absoluteString, privacy: .public) mouseOffShortcut=\(Self.mouseOffShortcutURL.absoluteString, privacy: .public)")
+            SpecchioLogger.easyMode.warning("[EasyConnectionTutorialMouseSetup] content displayed order=required-shortcuts-manual requiredAssistiveTouch=true mouseOnShortcut=\(Self.mouseOnShortcutURL.absoluteString, privacy: .public) mouseOffShortcut=\(Self.mouseOffShortcutURL.absoluteString, privacy: .public)")
         }
     }
 
@@ -3414,7 +3692,7 @@ private struct EasyConnectionTutorialPanel: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
@@ -3439,9 +3717,28 @@ private struct EasyConnectionTutorialPanel: View {
         }
     }
 
+    private var mouseManualSetupSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Or do it manually")
+                .font(.headline.weight(.bold))
+
+            TutorialVideoPlayerView(
+                asset: videoAsset,
+                displayHeight: panelVideoHeight,
+                source: "easy-connection-\(stage.logName)"
+            )
+
+            mouseSetupSteps
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            SpecchioLogger.easyMode.info("[EasyConnectionTutorialMouseSetup] manual section displayed videoAsset=\(videoAsset.diagnosticName, privacy: .public)")
+        }
+    }
+
     private var mouseShortcutCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Want to speed this up?")
+            Text("Install the shortcut")
                 .font(.headline.weight(.bold))
 
             Text("Add these Shortcuts to your iPhone so you can turn the mouse setup on and off faster.")
@@ -3464,7 +3761,7 @@ private struct EasyConnectionTutorialPanel: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(Color.white.opacity(0.18), lineWidth: 1)
@@ -3525,7 +3822,7 @@ private struct EasyAirPlayPINPanel: View {
         }
         .padding(24)
         .frame(width: size.width, height: size.height)
-        .background(.ultraThinMaterial, in: panelShape)
+        .background(.regularMaterial, in: panelShape)
         .overlay {
             panelShape
                 .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
@@ -3536,6 +3833,1005 @@ private struct EasyAirPlayPINPanel: View {
         }
         .onDisappear {
             SpecchioLogger.easyMode.info("[EasyAirPlayPINPanel] content disappeared")
+        }
+    }
+}
+
+private enum EasyFloatingToolbarPanelMetrics {
+    static let screenMargin = EasyControlBarMetrics.outerHorizontalPadding
+    static let hostGap = EasyControlBarMetrics.outerSpacing
+    static let indicatorSide = EasyControlBarMetrics.dividerHeight / 3
+    static let fallbackContentSize = CGSize(
+        width: EasyMirroringPresentationMetrics.minimumContentWidth(
+            visibleCommandCount: EasyToolbarCommandLayout.maximumVisibleCommandCount,
+            hasOverflowCommands: true,
+            nativeControlsLeadingPadding: 0
+        ),
+        height: EasyControlBarMetrics.windowReservedHeight
+    )
+}
+
+private extension Notification.Name {
+    static let easyModeProgrammaticWindowFrameDidChange = Notification.Name("SpecchioEasyModeProgrammaticWindowFrameDidChange")
+}
+
+private struct EasyFloatingToolbarNativeWindowControlState: Equatable {
+    static let disabled = EasyFloatingToolbarNativeWindowControlState(
+        canClose: false,
+        canMiniaturize: false,
+        canZoom: false
+    )
+
+    let canClose: Bool
+    let canMiniaturize: Bool
+    let canZoom: Bool
+}
+
+private final class EasyFloatingToolbarPanelController: NSObject, ObservableObject, NSWindowDelegate {
+    private var panel: NSPanel?
+    private weak var hostWindow: NSWindow?
+    private var hostWindowObservers: [NSObjectProtocol] = []
+    private var applicationObservers: [NSObjectProtocol] = []
+    private var desiredVisible = false
+    private var lastContentSize: CGSize = .zero
+    private var currentAnchor = AppSettings.Defaults.easyFloatingToolbarAnchor
+    private var currentAllowsDragging = AppSettings.Defaults.easyFloatingToolbarAllowsDragging
+    private var hostWindowDragSession: HostWindowDragSession?
+
+    private struct HostWindowDragSession {
+        let hostWindowNumber: Int
+        let startMouseLocation: CGPoint
+        let startHostFrame: CGRect
+        let startPanelFrame: CGRect
+    }
+
+    func attachHostWindow(_ window: NSWindow?, reason: String) {
+        guard hostWindow !== window else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host attach skipped reason=\(reason, privacy: .public) branch=same-window windowNumber=\(self.hostWindow?.windowNumber ?? -1)")
+            positionVisiblePanel(reason: "\(reason)-same-window")
+            return
+        }
+
+        removeHostWindowObservers(reason: "\(reason)-window-changed")
+        hostWindow = window
+        installApplicationObserversIfNeeded(reason: reason)
+
+        guard let window else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host detached reason=\(reason, privacy: .public)")
+            orderOut(reason: "\(reason)-host-detached")
+            return
+        }
+
+        installHostWindowObservers(for: window, reason: reason)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host attached reason=\(reason, privacy: .public) windowNumber=\(window.windowNumber) frame=\(InputSurfaceDiagnostics.rectString(window.frame), privacy: .public)")
+        positionVisiblePanel(reason: "\(reason)-host-attached")
+        scheduleDeferredPosition(reason: "\(reason)-host-attached", expectedHostWindow: window)
+    }
+
+    func update(
+        isVisible: Bool,
+        toolbarAlwaysVisiblePreference: Bool,
+        anchor: String,
+        allowsDragging: Bool,
+        layoutLog: String,
+        rootView: AnyView,
+        reason: String
+    ) {
+        desiredVisible = isVisible
+        let sanitizedAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(anchor)
+        currentAnchor = sanitizedAnchor
+        currentAllowsDragging = allowsDragging
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] update requested reason=\(reason, privacy: .public) desiredVisible=\(isVisible) alwaysVisiblePreference=\(toolbarAlwaysVisiblePreference) anchor=\(sanitizedAnchor, privacy: .public) allowsDragging=\(allowsDragging) hostWindow=\(self.hostWindow?.windowNumber ?? -1) \(layoutLog, privacy: .public)")
+
+        guard isVisible else {
+            orderOut(reason: "\(reason)-easy-mode-hidden")
+            return
+        }
+
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] update skipped reason=\(reason, privacy: .public) branch=no-host-window")
+            orderOut(reason: "\(reason)-no-host-window")
+            return
+        }
+
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] update skipped reason=\(reason, privacy: .public) branch=host-miniaturized windowNumber=\(hostWindow.windowNumber)")
+            orderOut(reason: "\(reason)-host-miniaturized")
+            return
+        }
+
+        let panel = panel ?? makePanel()
+        self.panel = panel
+        configurePanelMovement(panel, allowsDragging: allowsDragging, reason: reason)
+        updateRootView(rootView, in: panel, reason: reason)
+        updateContentSize(for: panel, reason: reason)
+        position(panel, near: hostWindow, anchor: sanitizedAnchor, reason: reason)
+
+        let wasVisible = panel.isVisible
+        panel.orderFrontRegardless()
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] shown reason=\(reason, privacy: .public) wasVisible=\(wasVisible) hostWindow=\(hostWindow.windowNumber) panelFrame=\(InputSurfaceDiagnostics.rectString(panel.frame), privacy: .public)")
+        scheduleDeferredPosition(reason: "\(reason)-shown", expectedHostWindow: hostWindow)
+    }
+
+    func hide(reason: String) {
+        desiredVisible = false
+        orderOut(reason: reason)
+    }
+
+    func windowControlState(reason: String) -> EasyFloatingToolbarNativeWindowControlState {
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] state reason=\(reason, privacy: .public) branch=no-host-window")
+            return .disabled
+        }
+
+        let state = EasyFloatingToolbarNativeWindowControlState(
+            canClose: hostWindow.styleMask.contains(.closable),
+            canMiniaturize: hostWindow.styleMask.contains(.miniaturizable) && !hostWindow.isMiniaturized,
+            canZoom: hostWindow.styleMask.contains(.resizable)
+        )
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] state reason=\(reason, privacy: .public) hostWindow=\(hostWindow.windowNumber) canClose=\(state.canClose) canMiniaturize=\(state.canMiniaturize) canZoom=\(state.canZoom) isMiniaturized=\(hostWindow.isMiniaturized)")
+        return state
+    }
+
+    func beginHostWindowDrag(with event: NSEvent, reason: String) {
+        guard currentAllowsDragging else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag skipped reason=\(reason, privacy: .public) branch=disabled eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag skipped reason=\(reason, privacy: .public) branch=no-host-window eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag skipped reason=\(reason, privacy: .public) branch=host-miniaturized hostWindow=\(hostWindow.windowNumber) eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+
+        let panelFrame = panel?.frame ?? .zero
+        hostWindowDragSession = HostWindowDragSession(
+            hostWindowNumber: hostWindow.windowNumber,
+            startMouseLocation: NSEvent.mouseLocation,
+            startHostFrame: hostWindow.frame,
+            startPanelFrame: panelFrame
+        )
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag started reason=\(reason, privacy: .public) eventNumber=\(event.eventNumber) hostWindow=\(hostWindow.windowNumber) hostFrame=\(InputSurfaceDiagnostics.rectString(hostWindow.frame), privacy: .public) panelFrame=\(InputSurfaceDiagnostics.rectString(panelFrame), privacy: .public) mouseX=\(NSEvent.mouseLocation.x) mouseY=\(NSEvent.mouseLocation.y)")
+    }
+
+    func updateHostWindowDrag(with event: NSEvent, reason: String) {
+        guard currentAllowsDragging else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag update skipped reason=\(reason, privacy: .public) branch=disabled eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+        guard let session = hostWindowDragSession else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host drag update skipped reason=\(reason, privacy: .public) branch=no-session eventNumber=\(event.eventNumber)")
+            return
+        }
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag update skipped reason=\(reason, privacy: .public) branch=no-host-window eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+        guard hostWindow.windowNumber == session.hostWindowNumber else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag update skipped reason=\(reason, privacy: .public) branch=host-window-changed startWindow=\(session.hostWindowNumber) currentWindow=\(hostWindow.windowNumber) eventNumber=\(event.eventNumber)")
+            hostWindowDragSession = nil
+            return
+        }
+
+        let currentMouseLocation = NSEvent.mouseLocation
+        let deltaX = currentMouseLocation.x - session.startMouseLocation.x
+        let deltaY = currentMouseLocation.y - session.startMouseLocation.y
+        let nextOrigin = CGPoint(
+            x: session.startHostFrame.origin.x + deltaX,
+            y: session.startHostFrame.origin.y + deltaY
+        )
+        hostWindow.setFrameOrigin(nextOrigin)
+        positionVisiblePanel(reason: "\(reason)-dragging")
+        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host drag updated reason=\(reason, privacy: .public) eventNumber=\(event.eventNumber) hostWindow=\(hostWindow.windowNumber) deltaX=\(deltaX) deltaY=\(deltaY) hostFrame=\(InputSurfaceDiagnostics.rectString(hostWindow.frame), privacy: .public) startPanelFrame=\(InputSurfaceDiagnostics.rectString(session.startPanelFrame), privacy: .public)")
+    }
+
+    func endHostWindowDrag(with event: NSEvent, reason: String) {
+        guard let session = hostWindowDragSession else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host drag end skipped reason=\(reason, privacy: .public) branch=no-session eventNumber=\(event.eventNumber)")
+            return
+        }
+
+        let hostFrameDescription = hostWindow.map { InputSurfaceDiagnostics.rectString($0.frame) } ?? "nil"
+        hostWindowDragSession = nil
+        positionVisiblePanel(reason: "\(reason)-ended")
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host drag ended reason=\(reason, privacy: .public) eventNumber=\(event.eventNumber) startWindow=\(session.hostWindowNumber) finalHostFrame=\(hostFrameDescription, privacy: .public)")
+    }
+
+    func performHostWindowClose(reason: String) {
+        guard let hostWindow = hostWindowForControlAction("close", reason: reason) else { return }
+        guard hostWindow.styleMask.contains(.closable) else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=close branch=not-closable hostWindow=\(hostWindow.windowNumber)")
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action reason=\(reason, privacy: .public) action=close branch=performClose hostWindow=\(hostWindow.windowNumber)")
+        hostWindow.performClose(nil)
+    }
+
+    func performHostWindowMiniaturize(reason: String) {
+        guard let hostWindow = hostWindowForControlAction("miniaturize", reason: reason) else { return }
+        guard hostWindow.styleMask.contains(.miniaturizable) else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=miniaturize branch=not-miniaturizable hostWindow=\(hostWindow.windowNumber)")
+            return
+        }
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=miniaturize branch=already-miniaturized hostWindow=\(hostWindow.windowNumber)")
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action reason=\(reason, privacy: .public) action=miniaturize branch=performMiniaturize hostWindow=\(hostWindow.windowNumber)")
+        hostWindow.performMiniaturize(nil)
+    }
+
+    func performHostWindowZoom(reason: String) {
+        guard let hostWindow = hostWindowForControlAction("zoom", reason: reason) else { return }
+        guard hostWindow.styleMask.contains(.resizable) else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=zoom branch=not-resizable hostWindow=\(hostWindow.windowNumber)")
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action reason=\(reason, privacy: .public) action=zoom branch=performZoom hostWindow=\(hostWindow.windowNumber)")
+        hostWindow.performZoom(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow, closingWindow === panel else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] windowWillClose ignored branch=untracked-window")
+            return
+        }
+
+        closingWindow.contentView = nil
+        panel = nil
+        lastContentSize = .zero
+        desiredVisible = false
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] closed by user")
+    }
+
+    deinit {
+        removeHostWindowObservers(reason: "deinit")
+        applicationObservers.forEach(NotificationCenter.default.removeObserver)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] deinit observers removed appObserverCount=\(self.applicationObservers.count)")
+    }
+
+    private func makePanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: CGRect(origin: .zero, size: EasyFloatingToolbarPanelMetrics.fallbackContentSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Specchio Easy Toolbar"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isMovableByWindowBackground = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.delegate = self
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] created style=borderless-nonactivating level=\(panel.level.rawValue) panelSelfDragging=false hostWindowDragging=\(self.currentAllowsDragging) fallbackWidth=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.width) fallbackHeight=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.height)")
+        return panel
+    }
+
+    private func configurePanelMovement(_ panel: NSPanel, allowsDragging: Bool, reason: String) {
+        if panel.isMovableByWindowBackground {
+            panel.isMovableByWindowBackground = false
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] drag routing applied reason=\(reason, privacy: .public) branch=disabled-panel-self-drag hostWindowDragging=\(allowsDragging)")
+            return
+        }
+
+        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] drag routing unchanged reason=\(reason, privacy: .public) panelSelfDragging=false hostWindowDragging=\(allowsDragging)")
+    }
+
+    private func updateRootView(_ rootView: AnyView, in panel: NSPanel, reason: String) {
+        if let hostingView = panel.contentView as? NSHostingView<AnyView> {
+            hostingView.rootView = rootView
+            hostingView.invalidateIntrinsicContentSize()
+            hostingView.layoutSubtreeIfNeeded()
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] root updated reason=\(reason, privacy: .public) branch=reused-hosting-view")
+            return
+        }
+
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.frame = CGRect(origin: .zero, size: EasyFloatingToolbarPanelMetrics.fallbackContentSize)
+        panel.contentView = hostingView
+        hostingView.layoutSubtreeIfNeeded()
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] root installed reason=\(reason, privacy: .public) branch=new-hosting-view")
+    }
+
+    private func updateContentSize(for panel: NSPanel, reason: String) {
+        let fittingSize = panel.contentView?.fittingSize ?? .zero
+        let resolvedSize = resolvedContentSize(from: fittingSize, reason: reason)
+        let sizeChanged = abs(lastContentSize.width - resolvedSize.width) > 0.5
+            || abs(lastContentSize.height - resolvedSize.height) > 0.5
+        guard sizeChanged else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] size unchanged reason=\(reason, privacy: .public) width=\(resolvedSize.width) height=\(resolvedSize.height)")
+            return
+        }
+
+        lastContentSize = resolvedSize
+        panel.contentMinSize = resolvedSize
+        panel.contentMaxSize = resolvedSize
+        panel.setContentSize(resolvedSize)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] size applied reason=\(reason, privacy: .public) fittingWidth=\(fittingSize.width) fittingHeight=\(fittingSize.height) resolvedWidth=\(resolvedSize.width) resolvedHeight=\(resolvedSize.height)")
+    }
+
+    private func resolvedContentSize(from fittingSize: CGSize, reason: String) -> CGSize {
+        guard fittingSize.width.isFinite,
+              fittingSize.height.isFinite,
+              fittingSize.width > 0,
+              fittingSize.height > 0 else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] size fallback reason=\(reason, privacy: .public) branch=invalid-fitting fittingWidth=\(fittingSize.width) fittingHeight=\(fittingSize.height)")
+            return EasyFloatingToolbarPanelMetrics.fallbackContentSize
+        }
+
+        let visibleFrame = hostWindow?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        guard !visibleFrame.isEmpty else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] size resolved reason=\(reason, privacy: .public) branch=no-screen width=\(fittingSize.width) height=\(fittingSize.height)")
+            return fittingSize
+        }
+
+        let margin = EasyFloatingToolbarPanelMetrics.screenMargin
+        let maximumWidth = max(EasyControlBarMetrics.buttonSide, visibleFrame.width - margin * 2)
+        let maximumHeight = max(EasyControlBarMetrics.windowReservedHeight, visibleFrame.height - margin * 2)
+        let resolvedSize = CGSize(
+            width: min(fittingSize.width, maximumWidth),
+            height: min(fittingSize.height, maximumHeight)
+        )
+        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] size resolved reason=\(reason, privacy: .public) branch=screen-clamped fittingWidth=\(fittingSize.width) fittingHeight=\(fittingSize.height) maxWidth=\(maximumWidth) maxHeight=\(maximumHeight) resolvedWidth=\(resolvedSize.width) resolvedHeight=\(resolvedSize.height)")
+        return resolvedSize
+    }
+
+    private func positionVisiblePanel(reason: String) {
+        guard let panel, panel.isVisible else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] reposition skipped reason=\(reason, privacy: .public) branch=not-visible")
+            return
+        }
+
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] reposition skipped reason=\(reason, privacy: .public) branch=no-host-window")
+            orderOut(reason: "\(reason)-no-host-window")
+            return
+        }
+
+        position(panel, near: hostWindow, anchor: currentAnchor, reason: reason)
+    }
+
+    private func scheduleDeferredPosition(reason: String, expectedHostWindow: NSWindow) {
+        let expectedWindowNumber = expectedHostWindow.windowNumber
+        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] deferred position scheduled reason=\(reason, privacy: .public) expectedHostWindow=\(expectedWindowNumber)")
+        DispatchQueue.main.async { [weak self, weak expectedHostWindow] in
+            guard let self else { return }
+            guard let expectedHostWindow,
+                  self.hostWindow === expectedHostWindow else {
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] deferred position skipped reason=\(reason, privacy: .public) branch=host-window-changed expectedHostWindow=\(expectedWindowNumber) currentHostWindow=\(self.hostWindow?.windowNumber ?? -1)")
+                return
+            }
+
+            self.positionVisiblePanel(reason: "\(reason)-deferred")
+        }
+    }
+
+    private func position(_ panel: NSPanel, near window: NSWindow, anchor: String, reason: String) {
+        let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+        guard !screenFrame.isEmpty else {
+            panel.center()
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] positioned reason=\(reason, privacy: .public) branch=no-screen-center anchor=\(anchor, privacy: .public)")
+            return
+        }
+
+        let sanitizedAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(anchor)
+        let panelSize = panel.frame.size
+        let margin = EasyFloatingToolbarPanelMetrics.screenMargin
+        let gap = EasyFloatingToolbarPanelMetrics.hostGap
+        let targetX = window.frame.midX - panelSize.width / 2
+        let clampedX = min(
+            max(screenFrame.minX + margin, targetX),
+            screenFrame.maxX - panelSize.width - margin
+        )
+        let targetY: CGFloat
+        let branch: String
+
+        switch sanitizedAnchor {
+        case AppSettings.EasyFloatingToolbarAnchor.below:
+            let unclampedBelowY = window.frame.minY - gap - panelSize.height
+            if unclampedBelowY >= screenFrame.minY + margin {
+                targetY = unclampedBelowY
+                branch = "below-host"
+            } else {
+                targetY = screenFrame.minY + margin
+                branch = "screen-bottom-clamped"
+            }
+        case AppSettings.EasyFloatingToolbarAnchor.above:
+            let unclampedAboveY = window.frame.maxY + gap
+            if unclampedAboveY + panelSize.height <= screenFrame.maxY - margin {
+                targetY = unclampedAboveY
+                branch = "above-host"
+            } else {
+                targetY = screenFrame.maxY - panelSize.height - margin
+                branch = "screen-top-clamped"
+            }
+        default:
+            let fallbackY = min(
+                max(screenFrame.minY + margin, window.frame.maxY + gap),
+                screenFrame.maxY - panelSize.height - margin
+            )
+            targetY = fallbackY
+            branch = "invalid-anchor-fallback-above"
+        }
+
+        panel.setFrameOrigin(CGPoint(x: clampedX, y: targetY))
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] positioned reason=\(reason, privacy: .public) branch=\(branch, privacy: .public) anchor=\(sanitizedAnchor, privacy: .public) allowsDragging=\(self.currentAllowsDragging) hostFrame=\(InputSurfaceDiagnostics.rectString(window.frame), privacy: .public) panelFrame=\(InputSurfaceDiagnostics.rectString(panel.frame), privacy: .public) screenFrame=\(InputSurfaceDiagnostics.rectString(screenFrame), privacy: .public)")
+    }
+
+    private func orderOut(reason: String) {
+        guard let panel, panel.isVisible else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] hide skipped reason=\(reason, privacy: .public) branch=not-visible")
+            return
+        }
+
+        panel.orderOut(nil)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] hidden reason=\(reason, privacy: .public)")
+    }
+
+    private func installHostWindowObservers(for window: NSWindow, reason: String) {
+        hostWindowObservers = [
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didMoveNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.positionVisiblePanel(reason: "host-window-moved")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.positionVisiblePanel(reason: "host-window-resized")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeScreenNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.positionVisiblePanel(reason: "host-window-screen-changed")
+            },
+            NotificationCenter.default.addObserver(
+                forName: .easyModeProgrammaticWindowFrameDidChange,
+                object: window,
+                queue: .main
+            ) { [weak self] notification in
+                let source = notification.userInfo?["source"] as? String ?? "unknown"
+                let sourceReason = notification.userInfo?["reason"] as? String ?? "unknown"
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host programmatic frame observed source=\(source, privacy: .public) sourceReason=\(sourceReason, privacy: .public)")
+                self?.positionVisiblePanel(reason: "host-window-programmatic-frame")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didMiniaturizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.orderOut(reason: "host-window-miniaturized")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didDeminiaturizeNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                guard self.desiredVisible, let panel = self.panel, let hostWindow = self.hostWindow else {
+                    SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] deminiaturize show skipped branch=not-ready desiredVisible=\(self.desiredVisible) hasPanel=\(self.panel != nil) hasHost=\(self.hostWindow != nil)")
+                    return
+                }
+
+                self.position(panel, near: hostWindow, anchor: self.currentAnchor, reason: "host-window-deminiaturized")
+                panel.orderFrontRegardless()
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] shown reason=host-window-deminiaturized hostWindow=\(hostWindow.windowNumber)")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                self?.orderOut(reason: "host-window-will-close")
+                self?.removeHostWindowObservers(reason: "host-window-will-close")
+                self?.hostWindow = nil
+            }
+        ]
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host observers installed reason=\(reason, privacy: .public) windowNumber=\(window.windowNumber) count=\(self.hostWindowObservers.count)")
+    }
+
+    private func removeHostWindowObservers(reason: String) {
+        guard !hostWindowObservers.isEmpty else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host observers remove skipped reason=\(reason, privacy: .public) branch=none")
+            return
+        }
+
+        hostWindowObservers.forEach(NotificationCenter.default.removeObserver)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host observers removed reason=\(reason, privacy: .public) count=\(self.hostWindowObservers.count)")
+        hostWindowObservers.removeAll()
+    }
+
+    private func installApplicationObserversIfNeeded(reason: String) {
+        guard applicationObservers.isEmpty else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] app observers skipped reason=\(reason, privacy: .public) branch=already-installed")
+            return
+        }
+
+        applicationObservers = [
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: NSApplication.shared,
+                queue: .main
+            ) { [weak self] _ in
+                self?.positionVisiblePanel(reason: "app-did-become-active")
+            },
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: NSApplication.shared,
+                queue: .main
+            ) { _ in
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] app resigned active branch=panel-kept-visible")
+            }
+        ]
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] app observers installed reason=\(reason, privacy: .public) count=\(self.applicationObservers.count)")
+    }
+
+    private func hostWindowForControlAction(_ action: String, reason: String) -> NSWindow? {
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=\(action, privacy: .public) branch=no-host-window")
+            return nil
+        }
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] action skipped reason=\(reason, privacy: .public) action=\(action, privacy: .public) branch=host-miniaturized hostWindow=\(hostWindow.windowNumber)")
+            return nil
+        }
+
+        return hostWindow
+    }
+}
+
+private struct EasyFloatingToolbarPanelContent: View {
+    let visibleCommands: [EasyToolbarCommand]
+    let overflowCommands: [EasyToolbarCommand]
+    @ObservedObject var bluetoothHIDPanel: BluetoothHIDPanelController
+    let phoneDisplayRotationDegrees: Int
+    @Binding var replayKitPrivacyBlurEnabled: Bool
+    @Binding var showEasyShortcutHelp: Bool
+    @Binding var easyAutoUnlockFeedback: EasyAutoUnlockFeedback?
+    let windowControlState: EasyFloatingToolbarNativeWindowControlState
+    let closeHostWindow: () -> Void
+    let miniaturizeHostWindow: () -> Void
+    let zoomHostWindow: () -> Void
+    let allowsHostWindowDragging: Bool
+    let beginHostWindowDrag: (NSEvent) -> Void
+    let updateHostWindowDrag: (NSEvent) -> Void
+    let endHostWindowDrag: (NSEvent) -> Void
+    let rotateScreen: (String) -> Void
+    let disconnectStream: (String) -> Void
+    let performEasyAutoUnlock: (String) -> Void
+
+    var body: some View {
+        HStack(spacing: EasyMirroringPresentationMetrics.headerItemSpacing) {
+            EasyFloatingToolbarNativeWindowControls(
+                state: windowControlState,
+                closeWindow: closeHostWindow,
+                miniaturizeWindow: miniaturizeHostWindow,
+                zoomWindow: zoomHostWindow
+            )
+
+            Circle()
+                .fill(Color.cyan)
+                .frame(
+                    width: EasyFloatingToolbarPanelMetrics.indicatorSide,
+                    height: EasyFloatingToolbarPanelMetrics.indicatorSide
+                )
+                .help("Floating toolbar panel active")
+                .accessibilityLabel("Floating toolbar panel active")
+
+            EasyToolbarCommandRow(
+                visibleCommands: visibleCommands,
+                overflowCommands: overflowCommands,
+                bluetoothHIDPanel: bluetoothHIDPanel,
+                phoneDisplayRotationDegrees: phoneDisplayRotationDegrees,
+                replayKitPrivacyBlurEnabled: $replayKitPrivacyBlurEnabled,
+                showEasyShortcutHelp: $showEasyShortcutHelp,
+                easyAutoUnlockFeedback: $easyAutoUnlockFeedback,
+                rotateScreen: rotateScreen,
+                disconnectStream: disconnectStream,
+                performEasyAutoUnlock: performEasyAutoUnlock,
+                source: "floating-toolbar-visible",
+                overflowSource: "floating-toolbar-overflow"
+            )
+        }
+        .padding(.horizontal, EasyControlBarMetrics.outerHorizontalPadding)
+        .padding(.vertical, EasyControlBarMetrics.outerVerticalPadding)
+        .background {
+            EasyFloatingToolbarHostWindowDragSurface(
+                isEnabled: allowsHostWindowDragging,
+                beginDrag: beginHostWindowDrag,
+                updateDrag: updateHostWindowDrag,
+                endDrag: endHostWindowDrag
+            )
+            .background(.ultraThinMaterial)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EasyControlBarMetrics.toolbarCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EasyControlBarMetrics.toolbarCornerRadius, style: .continuous)
+                .strokeBorder(
+                    Color.white.opacity(EasyMirroringPresentationMetrics.panelBorderOpacity),
+                    lineWidth: EasyControlBarMetrics.dividerWidth
+                )
+        }
+        .environment(\.colorScheme, .dark)
+        .tint(.white)
+        .fixedSize(horizontal: true, vertical: true)
+        .onAppear {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] content appeared visibleCount=\(visibleCommands.count) overflowCount=\(overflowCommands.count) visibleCommands=\(EasyToolbarCommand.storageValue(for: visibleCommands), privacy: .public) overflowCommands=\(EasyToolbarCommand.storageValue(for: overflowCommands), privacy: .public) indicator=cyan-dot nativeWindowControls=enabled hostWindowDragging=\(allowsHostWindowDragging) canClose=\(windowControlState.canClose) canMiniaturize=\(windowControlState.canMiniaturize) canZoom=\(windowControlState.canZoom)")
+        }
+    }
+}
+
+private struct EasyFloatingToolbarHostWindowDragSurface: NSViewRepresentable {
+    let isEnabled: Bool
+    let beginDrag: (NSEvent) -> Void
+    let updateDrag: (NSEvent) -> Void
+    let endDrag: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> DragSurfaceView {
+        let view = DragSurfaceView()
+        view.configure(
+            isEnabled: isEnabled,
+            beginDrag: beginDrag,
+            updateDrag: updateDrag,
+            endDrag: endDrag,
+            reason: "makeNSView"
+        )
+        return view
+    }
+
+    func updateNSView(_ nsView: DragSurfaceView, context: Context) {
+        nsView.configure(
+            isEnabled: isEnabled,
+            beginDrag: beginDrag,
+            updateDrag: updateDrag,
+            endDrag: endDrag,
+            reason: "updateNSView"
+        )
+    }
+
+    final class DragSurfaceView: NSView {
+        private var isEnabled = false
+        private var isDragging = false
+        private var beginDrag: (NSEvent) -> Void = { _ in }
+        private var updateDrag: (NSEvent) -> Void = { _ in }
+        private var endDrag: (NSEvent) -> Void = { _ in }
+
+        override var acceptsFirstResponder: Bool { true }
+
+        func configure(
+            isEnabled: Bool,
+            beginDrag: @escaping (NSEvent) -> Void,
+            updateDrag: @escaping (NSEvent) -> Void,
+            endDrag: @escaping (NSEvent) -> Void,
+            reason: String
+        ) {
+            let changed = self.isEnabled != isEnabled
+            self.isEnabled = isEnabled
+            self.beginDrag = beginDrag
+            self.updateDrag = updateDrag
+            self.endDrag = endDrag
+            if changed {
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] drag surface configured reason=\(reason, privacy: .public) enabled=\(isEnabled)")
+            } else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] drag surface refreshed reason=\(reason, privacy: .public) enabled=\(isEnabled)")
+            }
+        }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            true
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            guard isEnabled else {
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] drag surface mouseDown ignored branch=disabled eventNumber=\(event.eventNumber)")
+                return
+            }
+
+            isDragging = true
+            beginDrag(event)
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard isEnabled else {
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] drag surface mouseDragged ignored branch=disabled eventNumber=\(event.eventNumber)")
+                isDragging = false
+                return
+            }
+            guard isDragging else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] drag surface mouseDragged ignored branch=no-session eventNumber=\(event.eventNumber)")
+                return
+            }
+
+            updateDrag(event)
+        }
+
+        override func mouseUp(with event: NSEvent) {
+            guard isDragging else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] drag surface mouseUp ignored branch=no-session eventNumber=\(event.eventNumber)")
+                return
+            }
+
+            isDragging = false
+            endDrag(event)
+        }
+    }
+}
+
+private struct EasyFloatingToolbarNativeWindowControls: NSViewRepresentable {
+    let state: EasyFloatingToolbarNativeWindowControlState
+    let closeWindow: () -> Void
+    let miniaturizeWindow: () -> Void
+    let zoomWindow: () -> Void
+
+    private static let styleMaskForNativeButtons: NSWindow.StyleMask = [
+        .titled,
+        .closable,
+        .miniaturizable,
+        .resizable
+    ]
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NativeControlsView {
+        context.coordinator.configure(
+            state: state,
+            closeWindow: closeWindow,
+            miniaturizeWindow: miniaturizeWindow,
+            zoomWindow: zoomWindow,
+            reason: "makeNSView"
+        )
+
+        let stackView = NativeControlsView()
+        stackView.onHoverChanged = { [weak coordinator = context.coordinator] isHovering, reason in
+            coordinator?.setGroupHover(isHovering, reason: reason)
+        }
+        stackView.orientation = .horizontal
+        stackView.alignment = .centerY
+        stackView.distribution = .gravityAreas
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.setContentHuggingPriority(.required, for: .horizontal)
+        stackView.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        EasyFloatingToolbarNativeWindowButtonKind.allCases.forEach { kind in
+            guard let button = context.coordinator.makeButton(kind) else {
+                return
+            }
+            stackView.addArrangedSubview(button)
+        }
+
+        context.coordinator.updateButtonState(reason: "makeNSView")
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] native controls view created branch=standardWindowButton buttonCount=\(stackView.arrangedSubviews.count) spacing=\(stackView.spacing)")
+        return stackView
+    }
+
+    func updateNSView(_ nsView: NativeControlsView, context: Context) {
+        nsView.onHoverChanged = { [weak coordinator = context.coordinator] isHovering, reason in
+            coordinator?.setGroupHover(isHovering, reason: reason)
+        }
+        context.coordinator.configure(
+            state: state,
+            closeWindow: closeWindow,
+            miniaturizeWindow: miniaturizeWindow,
+            zoomWindow: zoomWindow,
+            reason: "updateNSView"
+        )
+        context.coordinator.updateButtonState(reason: "updateNSView")
+    }
+
+    final class NativeControlsView: NSStackView {
+        var onHoverChanged: ((Bool, String) -> Void)?
+        private var trackingArea: NSTrackingArea?
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let trackingArea {
+                removeTrackingArea(trackingArea)
+            }
+
+            let options: NSTrackingArea.Options = [
+                .mouseEnteredAndExited,
+                .activeAlways,
+                .inVisibleRect
+            ]
+            let trackingArea = NSTrackingArea(
+                rect: .zero,
+                options: options,
+                owner: self,
+                userInfo: nil
+            )
+            addTrackingArea(trackingArea)
+            self.trackingArea = trackingArea
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarControls] tracking area updated boundsWidth=\(self.bounds.width) boundsHeight=\(self.bounds.height)")
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            super.mouseEntered(with: event)
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] hover changed isHovering=true eventNumber=\(event.eventNumber)")
+            onHoverChanged?(true, "mouse-entered")
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            super.mouseExited(with: event)
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] hover changed isHovering=false eventNumber=\(event.eventNumber)")
+            onHoverChanged?(false, "mouse-exited")
+        }
+    }
+
+    final class Coordinator: NSObject {
+        private var state: EasyFloatingToolbarNativeWindowControlState = .disabled
+        private var closeWindow: () -> Void = {}
+        private var miniaturizeWindow: () -> Void = {}
+        private var zoomWindow: () -> Void = {}
+        private var buttons: [EasyFloatingToolbarNativeWindowButtonKind: NSButton] = [:]
+        private var lastAppliedState: EasyFloatingToolbarNativeWindowControlState?
+        private var isGroupHovering = false
+
+        func configure(
+            state: EasyFloatingToolbarNativeWindowControlState,
+            closeWindow: @escaping () -> Void,
+            miniaturizeWindow: @escaping () -> Void,
+            zoomWindow: @escaping () -> Void,
+            reason: String
+        ) {
+            self.state = state
+            self.closeWindow = closeWindow
+            self.miniaturizeWindow = miniaturizeWindow
+            self.zoomWindow = zoomWindow
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarControls] coordinator configured reason=\(reason, privacy: .public) canClose=\(state.canClose) canMiniaturize=\(state.canMiniaturize) canZoom=\(state.canZoom)")
+        }
+
+        func makeButton(_ kind: EasyFloatingToolbarNativeWindowButtonKind) -> NSButton? {
+            guard let button = NSWindow.standardWindowButton(
+                kind.buttonType,
+                for: EasyFloatingToolbarNativeWindowControls.styleMaskForNativeButtons
+            ) else {
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] button creation skipped branch=standard-button-unavailable kind=\(kind.logName, privacy: .public)")
+                return nil
+            }
+
+            button.target = self
+            button.action = kind.action
+            button.toolTip = kind.accessibilityLabel
+            button.setAccessibilityLabel(kind.accessibilityLabel)
+            button.translatesAutoresizingMaskIntoConstraints = false
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+            buttons[kind] = button
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] button created kind=\(kind.logName, privacy: .public) intrinsicWidth=\(button.intrinsicContentSize.width) intrinsicHeight=\(button.intrinsicContentSize.height)")
+            return button
+        }
+
+        func updateButtonState(reason: String) {
+            buttons[.close]?.isEnabled = state.canClose
+            buttons[.miniaturize]?.isEnabled = state.canMiniaturize
+            buttons[.zoom]?.isEnabled = state.canZoom
+            applyHoverState(reason: "\(reason)-button-state")
+
+            guard lastAppliedState != state else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarControls] button state unchanged reason=\(reason, privacy: .public) canClose=\(self.state.canClose) canMiniaturize=\(self.state.canMiniaturize) canZoom=\(self.state.canZoom)")
+                return
+            }
+
+            lastAppliedState = state
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] button state applied reason=\(reason, privacy: .public) canClose=\(self.state.canClose) canMiniaturize=\(self.state.canMiniaturize) canZoom=\(self.state.canZoom)")
+        }
+
+        func setGroupHover(_ isHovering: Bool, reason: String) {
+            guard isGroupHovering != isHovering else {
+                SpecchioLogger.easyMode.debug("[EasyFloatingToolbarControls] hover unchanged reason=\(reason, privacy: .public) isHovering=\(isHovering)")
+                return
+            }
+
+            isGroupHovering = isHovering
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] hover state changed reason=\(reason, privacy: .public) isHovering=\(isHovering)")
+            applyHoverState(reason: reason)
+        }
+
+        private func applyHoverState(reason: String) {
+            var highlightedCount = 0
+            EasyFloatingToolbarNativeWindowButtonKind.allCases.forEach { kind in
+                guard let button = buttons[kind] else {
+                    SpecchioLogger.easyMode.debug("[EasyFloatingToolbarControls] hover apply skipped reason=\(reason, privacy: .public) kind=\(kind.logName, privacy: .public) branch=missing-button")
+                    return
+                }
+
+                let isHighlighted = self.isGroupHovering && button.isEnabled
+                button.isHighlighted = isHighlighted
+                if isHighlighted {
+                    highlightedCount += 1
+                }
+            }
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] hover applied reason=\(reason, privacy: .public) isGroupHovering=\(self.isGroupHovering) highlightedCount=\(highlightedCount)")
+        }
+
+        @objc func closeButtonPressed(_ sender: NSButton) {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] native button pressed kind=close enabled=\(sender.isEnabled)")
+            closeWindow()
+        }
+
+        @objc func miniaturizeButtonPressed(_ sender: NSButton) {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] native button pressed kind=miniaturize enabled=\(sender.isEnabled)")
+            miniaturizeWindow()
+        }
+
+        @objc func zoomButtonPressed(_ sender: NSButton) {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarControls] native button pressed kind=zoom enabled=\(sender.isEnabled)")
+            zoomWindow()
+        }
+    }
+}
+
+private enum EasyFloatingToolbarNativeWindowButtonKind: CaseIterable {
+    case close
+    case miniaturize
+    case zoom
+
+    var buttonType: NSWindow.ButtonType {
+        switch self {
+        case .close:
+            return .closeButton
+        case .miniaturize:
+            return .miniaturizeButton
+        case .zoom:
+            return .zoomButton
+        }
+    }
+
+    var action: Selector {
+        switch self {
+        case .close:
+            return #selector(EasyFloatingToolbarNativeWindowControls.Coordinator.closeButtonPressed(_:))
+        case .miniaturize:
+            return #selector(EasyFloatingToolbarNativeWindowControls.Coordinator.miniaturizeButtonPressed(_:))
+        case .zoom:
+            return #selector(EasyFloatingToolbarNativeWindowControls.Coordinator.zoomButtonPressed(_:))
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .close:
+            return "Close"
+        case .miniaturize:
+            return "Minimize"
+        case .zoom:
+            return "Zoom"
+        }
+    }
+
+    var logName: String {
+        switch self {
+        case .close:
+            return "close"
+        case .miniaturize:
+            return "miniaturize"
+        case .zoom:
+            return "zoom"
         }
     }
 }
@@ -3595,6 +4891,7 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
         ))
         position(panel, reason: source)
         panel.orderFrontRegardless()
+        installHostNativeChromeDebugOverlays(reason: "\(source)-after-pin-panel-order-front")
         scheduleAutoDismiss(generation: displayGeneration, source: source)
         SpecchioLogger.easyMode.warning("[EasyAirPlayPINPanelWindow] shown source=\(source, privacy: .public) pinDigits=\(trimmedPIN.count) generation=\(self.displayGeneration)")
     }
@@ -3693,6 +4990,43 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
 
         let windowDescription = referenceWindow.map { InputSurfaceDiagnostics.rectString($0.frame) } ?? "none"
         SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] positioned reason=\(reason, privacy: .public) referenceFrame=\(windowDescription, privacy: .public) panelFrame=\(InputSurfaceDiagnostics.rectString(panel.frame), privacy: .public) screenFrame=\(InputSurfaceDiagnostics.rectString(screenFrame), privacy: .public)")
+    }
+
+    private func installHostNativeChromeDebugOverlays(reason: String) {
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] native chrome debug skipped reason=\(reason, privacy: .public) branch=no-host-window")
+            return
+        }
+
+        let contentRect = hostWindow.contentRect(forFrameRect: hostWindow.frame)
+        let layoutRect = hostWindow.contentLayoutRect
+        SpecchioLogger.easyMode.warning("[EasyAirPlayPINPanelWindow] native chrome debug scheduled reason=\(reason, privacy: .public) hostWindow=\(hostWindow.windowNumber) frame=\(InputSurfaceDiagnostics.rectString(hostWindow.frame), privacy: .public) contentHeight=\(contentRect.height) layoutHeight=\(layoutRect.height) layoutDelta=\(contentRect.height - layoutRect.height) titled=\(hostWindow.styleMask.contains(.titled)) fullSizeContent=\(hostWindow.styleMask.contains(.fullSizeContentView)) toolbarHidden=\(!(hostWindow.toolbar?.isVisible ?? true))")
+
+        SpecchioPresentationWindowChrome.installNativeDebugOverlays(
+            to: hostWindow,
+            reason: "AirPlayPIN-\(reason)-immediate"
+        )
+        DispatchQueue.main.async { [weak hostWindow] in
+            guard let hostWindow else { return }
+            SpecchioPresentationWindowChrome.installNativeDebugOverlays(
+                to: hostWindow,
+                reason: "AirPlayPIN-\(reason)-next-runloop"
+            )
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak hostWindow] in
+            guard let hostWindow else { return }
+            SpecchioPresentationWindowChrome.installNativeDebugOverlays(
+                to: hostWindow,
+                reason: "AirPlayPIN-\(reason)-after-focus-paint"
+            )
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { [weak hostWindow] in
+            guard let hostWindow else { return }
+            SpecchioPresentationWindowChrome.installNativeDebugOverlays(
+                to: hostWindow,
+                reason: "AirPlayPIN-\(reason)-after-layout-settled"
+            )
+        }
     }
 }
 
@@ -4368,7 +5702,7 @@ private struct EasyPointerSpikeOverlay: View {
                         .foregroundStyle(.secondary)
                 }
                 .padding(8)
-                .background(.ultraThinMaterial)
+                .background(.regularMaterial)
                 .cornerRadius(8)
                 .padding(10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -4418,7 +5752,7 @@ private struct EasyPointerSpikeOverlay: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(8)
-                    .background(.ultraThinMaterial)
+                    .background(.regularMaterial)
                     .cornerRadius(8)
                     .padding(10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -4462,7 +5796,7 @@ private struct EasyPointerSpikeOverlay: View {
                         }
                     }
                     .padding(8)
-                    .background(.ultraThinMaterial)
+                    .background(.regularMaterial)
                     .cornerRadius(8)
                     .padding(10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -4888,6 +6222,25 @@ struct EasyWindowVideoSizing {
         )
     }
 
+    static func targetContentSizeForLaunch(
+        displayedPhoneSize: CGSize,
+        topChromeHeight: CGFloat,
+        minimumContentSize: CGSize,
+        minimumTopChromeHeight: CGFloat = EasyControlBarMetrics.windowReservedHeight
+    ) -> CGSize {
+        guard let ratio = aspectRatio(for: displayedPhoneSize) else { return .zero }
+        let safeChromeHeight = effectiveTopChromeHeight(
+            reportedTopChromeHeight: topChromeHeight,
+            minimumTopChromeHeight: minimumTopChromeHeight
+        )
+        return contentSizeForVideoWidth(
+            displayedPhoneSize.width,
+            aspectRatio: ratio,
+            topChromeHeight: safeChromeHeight,
+            minimumContentSize: minimumContentSize
+        )
+    }
+
     static func contentSizeMatchesVideoAspect(
         contentSize: CGSize,
         displayedPhoneSize: CGSize,
@@ -5125,11 +6478,13 @@ private struct EasyPhoneSurfaceLayout: Equatable {
 
 private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
     let standardControlsVisible: Bool
+    let standardTitlebarEnabled: Bool
     let onFocusChange: (Bool, Bool, String) -> Void
 
     func makeNSView(context: Context) -> FocusObserverView {
         let view = FocusObserverView()
         view.standardControlsVisible = standardControlsVisible
+        view.standardTitlebarEnabled = standardTitlebarEnabled
         view.onFocusChange = onFocusChange
         SpecchioLogger.easyMode.info("[EasyPresentationFocus] observer created branch=makeNSView")
         return view
@@ -5137,6 +6492,7 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
 
     func updateNSView(_ nsView: FocusObserverView, context: Context) {
         nsView.standardControlsVisible = standardControlsVisible
+        nsView.standardTitlebarEnabled = standardTitlebarEnabled
         nsView.onFocusChange = onFocusChange
         nsView.attachToCurrentWindow(reason: "updateNSView")
     }
@@ -5144,6 +6500,7 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
     final class FocusObserverView: NSView {
         var onFocusChange: ((Bool, Bool, String) -> Void)?
         var standardControlsVisible = false
+        var standardTitlebarEnabled = false
         private weak var observedWindow: NSWindow?
         private var windowObservers: [NSObjectProtocol] = []
         private var applicationObservers: [NSObjectProtocol] = []
@@ -5174,7 +6531,8 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
             SpecchioPresentationWindowChrome.apply(
                 to: window,
                 reason: "EasyPresentationFocus-\(reason)-attach",
-                standardControlsVisible: standardControlsVisible
+                standardControlsVisible: standardControlsVisible,
+                standardTitlebarEnabled: standardTitlebarEnabled
             )
             windowObservers = [
                 NotificationCenter.default.addObserver(
@@ -5206,7 +6564,7 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
                     self?.handleWindowFocusNotification(reason: "window-didResignMain")
                 }
             ]
-            SpecchioLogger.easyMode.info("[EasyPresentationFocus] attach branch=installed reason=\(reason, privacy: .public) standardControlsVisible=\(self.standardControlsVisible) windowNumber=\(window.windowNumber) isKey=\(window.isKeyWindow) observerCount=\(self.windowObservers.count)")
+            SpecchioLogger.easyMode.info("[EasyPresentationFocus] attach branch=installed reason=\(reason, privacy: .public) standardControlsVisible=\(self.standardControlsVisible) standardTitlebarEnabled=\(self.standardTitlebarEnabled) windowNumber=\(window.windowNumber) isKey=\(window.isKeyWindow) observerCount=\(self.windowObservers.count)")
             reportCurrentFocus(reason: "\(reason)-installed")
         }
 
@@ -5249,7 +6607,8 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: observedWindow,
                     reason: "EasyPresentationFocus-\(reason)",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             }
             reportCurrentFocus(reason: reason)
@@ -5285,7 +6644,8 @@ private struct EasyPresentationWindowFocusObserver: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: observedWindow,
                     reason: "EasyPresentationFocus-\(reason)",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             }
             reportCurrentFocus(reason: reason)
@@ -5528,7 +6888,6 @@ private struct EasyMirroringPresentationPanelChrome: View {
 private struct EasyMirroringPhoneSurfacePresentation: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(EasyMirroringPhoneWindowShape())
             .overlay {
                 EasyMirroringPhoneWindowShape()
@@ -5539,7 +6898,7 @@ private struct EasyMirroringPhoneSurfacePresentation: ViewModifier {
             }
             .contentShape(EasyMirroringPhoneWindowShape())
             .onAppear {
-                SpecchioLogger.easyMode.info("[EasyPresentation] phone surface shape active cornerBasis=short-edge cornerRatio=\(EasyMirroringPresentationMetrics.displayCornerRadiusToShortEdgeRatio) borderWidth=\(EasyControlBarMetrics.dividerWidth)")
+                SpecchioLogger.easyMode.info("[EasyPresentation] phone surface shape active branch=transparent-wrapper cornerBasis=short-edge cornerRatio=\(EasyMirroringPresentationMetrics.displayCornerRadiusToShortEdgeRatio) borderWidth=\(EasyControlBarMetrics.dividerWidth)")
             }
     }
 }
@@ -6056,6 +7415,8 @@ private struct EasyToolbarCommandRow: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    var source = "control-bar-visible"
+    var overflowSource = "control-bar-overflow"
 
     var body: some View {
         HStack(spacing: EasyControlBarMetrics.toolbarSpacing) {
@@ -6070,7 +7431,7 @@ private struct EasyToolbarCommandRow: View {
                     rotateScreen: rotateScreen,
                     disconnectStream: disconnectStream,
                     performEasyAutoUnlock: performEasyAutoUnlock,
-                    source: "control-bar-visible"
+                    source: source
                 )
             }
 
@@ -6084,7 +7445,8 @@ private struct EasyToolbarCommandRow: View {
                     easyAutoUnlockFeedback: $easyAutoUnlockFeedback,
                     rotateScreen: rotateScreen,
                     disconnectStream: disconnectStream,
-                    performEasyAutoUnlock: performEasyAutoUnlock
+                    performEasyAutoUnlock: performEasyAutoUnlock,
+                    source: overflowSource
                 )
             }
         }
@@ -6219,6 +7581,7 @@ private struct EasyToolbarOverflowMenu: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    var source = "control-bar-overflow"
 
     var body: some View {
         Menu {
@@ -6257,7 +7620,7 @@ private struct EasyToolbarOverflowMenu: View {
     }
 
     private func perform(_ command: EasyToolbarCommand) {
-        SpecchioLogger.easyMode.info("[EasyToolbarCommand] selected source=control-bar-overflow command=\(command.rawValue, privacy: .public) title=\(command.title, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyToolbarCommand] selected source=\(source, privacy: .public) command=\(command.rawValue, privacy: .public) title=\(command.title, privacy: .public)")
         switch command {
         case .search:
             bluetoothHIDPanel.sendKeyboardShortcutCommand(
@@ -6273,15 +7636,15 @@ private struct EasyToolbarOverflowMenu: View {
         case .mute:
             bluetoothHIDPanel.sendConsumerControlCommand(bit: 8, name: command.title)
         case .home:
-            recordEasyHomeCommandDiagnostic(source: "control-bar-overflow", displayRotationDegrees: phoneDisplayRotationDegrees)
+            recordEasyHomeCommandDiagnostic(source: source, displayRotationDegrees: phoneDisplayRotationDegrees)
             bluetoothHIDPanel.sendConsumerControlCommand(bit: 2, name: command.title)
         case .autoUnlock:
-            performEasyAutoUnlock("control-bar-overflow")
+            performEasyAutoUnlock(source)
         case .rotateScreen:
-            rotateScreen("control-bar-overflow")
+            rotateScreen(source)
         case .privacyBlur:
             let nextValue = !replayKitPrivacyBlurEnabled
-            SpecchioLogger.easyMode.info("[EasyPrivacyBlur] toggle selected source=control-bar-overflow from=\(replayKitPrivacyBlurEnabled) to=\(nextValue)")
+            SpecchioLogger.easyMode.info("[EasyPrivacyBlur] toggle selected source=\(source, privacy: .public) from=\(replayKitPrivacyBlurEnabled) to=\(nextValue)")
             replayKitPrivacyBlurEnabled = nextValue
         case .screenshot:
             bluetoothHIDPanel.sendKeyboardShortcutCommand(
@@ -6305,9 +7668,9 @@ private struct EasyToolbarOverflowMenu: View {
                 holdDuration: 0.45
             )
         case .disconnect:
-            disconnectStream("control-bar-overflow")
+            disconnectStream(source)
         case .showShortcuts:
-            SpecchioLogger.easyMode.info("[EasyToolbarCommand] show shortcuts panel requested source=control-bar-overflow")
+            SpecchioLogger.easyMode.info("[EasyToolbarCommand] show shortcuts panel requested source=\(source, privacy: .public)")
             showEasyShortcutHelp = true
         }
     }
@@ -6919,6 +8282,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
     let minimumContentWidth: CGFloat
     let countsWindowLayoutInsetAsChrome: Bool
     let standardControlsVisible: Bool
+    let standardTitlebarEnabled: Bool
 
     final class AspectRatioView: NSView {
         weak var sizingController: EasyWindowSizingController?
@@ -6942,9 +8306,11 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
         private var minimumContentWidth: CGFloat = 0
         private var countsWindowLayoutInsetAsChrome = true
         private var standardControlsVisible = false
+        private var standardTitlebarEnabled = false
         private var phoneSurfaceAvailableHeight: CGFloat = 0
         private var videoFrameSize: CGSize?
         private var hasHandledInitialVideoFrameSizing = false
+        private var hasAppliedLaunchPreferredContentSize = false
         private var skipNextAttachAspectEnforceReason: String?
         private var rotationDegrees = 0
         private var lastAppliedRotationDegrees: Int?
@@ -6964,6 +8330,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             minimumContentWidth: CGFloat,
             countsWindowLayoutInsetAsChrome: Bool,
             standardControlsVisible: Bool,
+            standardTitlebarEnabled: Bool,
             reason: String
         ) {
             let nextRotation = EasyWindowVideoSizing.normalizedRotation(rotationDegrees)
@@ -6987,6 +8354,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             self.minimumContentWidth = sanitizedMinimumContentWidth
             self.countsWindowLayoutInsetAsChrome = countsWindowLayoutInsetAsChrome
             self.standardControlsVisible = standardControlsVisible
+            self.standardTitlebarEnabled = standardTitlebarEnabled
             self.phoneSurfaceAvailableHeight = phoneSurfaceAvailableSize.height
             self.videoFrameSize = videoFrameSize
             self.rotationDegrees = nextRotation
@@ -6997,10 +8365,11 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
                 skipNextAttachAspectEnforceReason = nil
             }
 
-            SpecchioLogger.easyMode.info("[EasySizing] update reason=\(reason, privacy: .public) rotation=\(nextRotation) previousRotation=\(previousRotation ?? -1) displayedPhoneWidth=\(displayedPhoneSize.width) displayedPhoneHeight=\(displayedPhoneSize.height) videoFrameWidth=\(videoFrameSize?.width ?? -1) videoFrameHeight=\(videoFrameSize?.height ?? -1) reportedTopChromeHeight=\(topChromeHeight) minimumTopChromeHeight=\(minimumTopChromeHeight) minimumContentWidth=\(sanitizedMinimumContentWidth) minimumContentWidthChanged=\(minimumContentWidthChanged) effectiveTopChromeHeight=\(topChromeMeasurement.height) topChromeSource=\(topChromeMeasurement.source.rawValue, privacy: .public) measuredTopChromeHeight=\(topChromeMeasurement.measuredHeight ?? -1) countsWindowLayoutInsetAsChrome=\(countsWindowLayoutInsetAsChrome) standardControlsVisible=\(standardControlsVisible) contentWidth=\(contentSize.width) contentHeight=\(contentSize.height) availableVideoWidth=\(phoneSurfaceAvailableSize.width) availableVideoHeight=\(phoneSurfaceAvailableSize.height) hasVideoFrame=\(hasVideoFrame) hadVideoFrame=\(hadVideoFrame) initialVideoFrameSizingHandled=\(self.hasHandledInitialVideoFrameSizing) pendingAttachAspectSkip=\(self.skipNextAttachAspectEnforceReason != nil)")
+            SpecchioLogger.easyMode.info("[EasySizing] update reason=\(reason, privacy: .public) rotation=\(nextRotation) previousRotation=\(previousRotation ?? -1) displayedPhoneWidth=\(displayedPhoneSize.width) displayedPhoneHeight=\(displayedPhoneSize.height) videoFrameWidth=\(videoFrameSize?.width ?? -1) videoFrameHeight=\(videoFrameSize?.height ?? -1) reportedTopChromeHeight=\(topChromeHeight) minimumTopChromeHeight=\(minimumTopChromeHeight) minimumContentWidth=\(sanitizedMinimumContentWidth) minimumContentWidthChanged=\(minimumContentWidthChanged) effectiveTopChromeHeight=\(topChromeMeasurement.height) topChromeSource=\(topChromeMeasurement.source.rawValue, privacy: .public) measuredTopChromeHeight=\(topChromeMeasurement.measuredHeight ?? -1) countsWindowLayoutInsetAsChrome=\(countsWindowLayoutInsetAsChrome) standardControlsVisible=\(standardControlsVisible) standardTitlebarEnabled=\(standardTitlebarEnabled) contentWidth=\(contentSize.width) contentHeight=\(contentSize.height) availableVideoWidth=\(phoneSurfaceAvailableSize.width) availableVideoHeight=\(phoneSurfaceAvailableSize.height) hasVideoFrame=\(hasVideoFrame) hadVideoFrame=\(hadVideoFrame) initialVideoFrameSizingHandled=\(self.hasHandledInitialVideoFrameSizing) pendingAttachAspectSkip=\(self.skipNextAttachAspectEnforceReason != nil)")
 
             if let window {
                 applyMinimumContentWidth(to: window, reason: "update-\(reason)")
+                applyLaunchPreferredContentSizeIfNeeded(reason: "update-\(reason)")
             } else {
                 SpecchioLogger.easyMode.info("[EasyPresentationHeaderWidth] window minimum deferred reason=\(reason, privacy: .public) branch=no-window minimumContentWidth=\(sanitizedMinimumContentWidth)")
             }
@@ -7065,6 +8434,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             }
 
             configureWindow(reason: reason)
+            applyLaunchPreferredContentSizeIfNeeded(reason: "attach-\(reason)")
             handleInitialVideoFrameSizingIfNeeded(reason: reason)
             enforceCurrentAspectAfterAttachIfNeeded(reason: "attach-\(reason)")
         }
@@ -7238,7 +8608,8 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: window,
                     reason: "EasySizing-windowDidBecomeKey",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             } else {
                 configureWindow(reason: "windowDidBecomeKey")
@@ -7251,7 +8622,8 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: window,
                     reason: "EasySizing-windowDidResignKey",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             } else {
                 configureWindow(reason: "windowDidResignKey")
@@ -7264,7 +8636,8 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: window,
                     reason: "EasySizing-windowDidBecomeMain",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             } else {
                 configureWindow(reason: "windowDidBecomeMain")
@@ -7277,7 +8650,8 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
                 SpecchioPresentationWindowChrome.reapplyAfterSystemChromeUpdate(
                     to: window,
                     reason: "EasySizing-windowDidResignMain",
-                    standardControlsVisible: standardControlsVisible
+                    standardControlsVisible: standardControlsVisible,
+                    standardTitlebarEnabled: standardTitlebarEnabled
                 )
             } else {
                 configureWindow(reason: "windowDidResignMain")
@@ -7310,10 +8684,11 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             SpecchioPresentationWindowChrome.apply(
                 to: window,
                 reason: "EasySizing-\(reason)",
-                standardControlsVisible: standardControlsVisible
+                standardControlsVisible: standardControlsVisible,
+                standardTitlebarEnabled: standardTitlebarEnabled
             )
             applyMinimumContentWidth(to: window, reason: "configure-\(reason)")
-            SpecchioLogger.easyMode.info("[EasySizing] configured reason=\(reason, privacy: .public) presentation=iPhoneMirroring standardControlsVisible=\(self.standardControlsVisible) titled=\(window.styleMask.contains(.titled)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) contentWidth=\(self.currentContentSize(for: window).width) contentHeight=\(self.currentContentSize(for: window).height) rotation=\(self.rotationDegrees) minimumTopChromeHeight=\(self.minimumTopChromeHeight) minimumContentWidth=\(self.minimumContentWidth) transparentPanelBacking=\(!window.isOpaque) windowLevel=\(window.level.rawValue)")
+            SpecchioLogger.easyMode.info("[EasySizing] configured reason=\(reason, privacy: .public) presentation=iPhoneMirroring standardControlsVisible=\(self.standardControlsVisible) standardTitlebarEnabled=\(self.standardTitlebarEnabled) titled=\(window.styleMask.contains(.titled)) toolbarHidden=\(!(window.toolbar?.isVisible ?? true)) contentWidth=\(self.currentContentSize(for: window).width) contentHeight=\(self.currentContentSize(for: window).height) rotation=\(self.rotationDegrees) minimumTopChromeHeight=\(self.minimumTopChromeHeight) minimumContentWidth=\(self.minimumContentWidth) transparentPanelBacking=\(!window.isOpaque) windowLevel=\(window.level.rawValue)")
         }
 
         private func applyRotationResize(from previousRotation: Int, to nextRotation: Int, reason: String) {
@@ -7345,6 +8720,130 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
 
             SpecchioLogger.easyMode.info("[EasySizing] rotation resize applying reason=\(reason, privacy: .public) from=\(previousRotation) to=\(nextRotation) currentWidth=\(currentContentSize.width) currentHeight=\(currentContentSize.height) targetWidth=\(targetContentSize.width) targetHeight=\(targetContentSize.height) effectiveTopChromeHeight=\(effectiveTopChromeHeight)")
             applyContentSize(targetContentSize, reason: reason, source: "rotation")
+        }
+
+        private func applyLaunchPreferredContentSizeIfNeeded(reason: String) {
+            guard !hasAppliedLaunchPreferredContentSize else {
+                SpecchioLogger.easyMode.debug("[EasySizing] launch preferred size skipped reason=\(reason, privacy: .public) branch=already-applied")
+                return
+            }
+            guard let window else {
+                SpecchioLogger.easyMode.info("[EasySizing] launch preferred size deferred reason=\(reason, privacy: .public) branch=no-window")
+                return
+            }
+            guard !window.inLiveResize else {
+                SpecchioLogger.easyMode.info("[EasySizing] launch preferred size deferred reason=\(reason, privacy: .public) branch=live-resize")
+                return
+            }
+
+            let currentContentSize = currentContentSize(for: window)
+            let effectiveTopChromeHeight = effectiveNonVideoHeight(for: window)
+            let preferredPhoneSize = SpecchioPhoneWindowMetrics.preferredLaunchPhoneScreenSize(rotationDegrees: rotationDegrees)
+            let unconstrainedPreferredContentSize = EasyWindowVideoSizing.targetContentSizeForLaunch(
+                displayedPhoneSize: preferredPhoneSize,
+                topChromeHeight: effectiveTopChromeHeight,
+                minimumContentSize: .zero,
+                minimumTopChromeHeight: minimumTopChromeHeight
+            )
+            applyLaunchMinimumContentSizeIfNeeded(
+                to: window,
+                maximumContentSize: unconstrainedPreferredContentSize,
+                reason: reason
+            )
+            let minimumContentSize = minimumContentSize(for: window)
+            let preferredContentSize = EasyWindowVideoSizing.targetContentSizeForLaunch(
+                displayedPhoneSize: preferredPhoneSize,
+                topChromeHeight: effectiveTopChromeHeight,
+                minimumContentSize: minimumContentSize,
+                minimumTopChromeHeight: minimumTopChromeHeight
+            )
+            guard currentContentSize.width > 0,
+                  currentContentSize.height > 0,
+                  preferredContentSize.width > 0,
+                  preferredContentSize.height > 0 else {
+                SpecchioLogger.easyMode.info("[EasySizing] launch preferred size deferred reason=\(reason, privacy: .public) branch=invalid-size currentWidth=\(currentContentSize.width) currentHeight=\(currentContentSize.height) preferredWidth=\(preferredContentSize.width) preferredHeight=\(preferredContentSize.height)")
+                return
+            }
+
+            let currentVideoWidth = currentContentSize.width
+            let currentVideoHeight = max(0, currentContentSize.height - effectiveTopChromeHeight)
+            let preferredVideoWidth = preferredContentSize.width
+            let preferredVideoHeight = max(0, preferredContentSize.height - effectiveTopChromeHeight)
+            let isOversized = currentVideoWidth > preferredVideoWidth + EasyWindowVideoSizing.tolerance
+                || currentVideoHeight > preferredVideoHeight + EasyWindowVideoSizing.tolerance
+
+            hasAppliedLaunchPreferredContentSize = true
+            guard isOversized else {
+                SpecchioLogger.easyMode.info("[EasySizing] launch preferred size skipped reason=\(reason, privacy: .public) branch=not-oversized currentVideoWidth=\(currentVideoWidth) currentVideoHeight=\(currentVideoHeight) preferredVideoWidth=\(preferredVideoWidth) preferredVideoHeight=\(preferredVideoHeight) preferredPhoneWidth=\(preferredPhoneSize.width) preferredPhoneHeight=\(preferredPhoneSize.height) source=\(SpecchioPhoneWindowMetrics.easyModeLaunchMeasurementSource, privacy: .public)")
+                return
+            }
+
+            SpecchioLogger.easyMode.info("[EasySizing] launch preferred size applying reason=\(reason, privacy: .public) currentContentWidth=\(currentContentSize.width) currentContentHeight=\(currentContentSize.height) preferredContentWidth=\(preferredContentSize.width) preferredContentHeight=\(preferredContentSize.height) preferredPhoneWidth=\(preferredPhoneSize.width) preferredPhoneHeight=\(preferredPhoneSize.height) defaultDisplayedPhoneWidth=\(self.displayedPhoneSize.width) defaultDisplayedPhoneHeight=\(self.displayedPhoneSize.height) source=\(SpecchioPhoneWindowMetrics.easyModeLaunchMeasurementSource, privacy: .public) effectiveTopChromeHeight=\(effectiveTopChromeHeight) minimumContentWidth=\(minimumContentSize.width) minimumContentHeight=\(minimumContentSize.height)")
+            applyContentSize(preferredContentSize, reason: reason, source: "launch-preferred-size")
+        }
+
+        private var usesExternalFloatingToolbar: Bool {
+            guard minimumTopChromeHeight <= EasyWindowVideoSizing.tolerance,
+                  !standardTitlebarEnabled else {
+                return false
+            }
+
+            return true
+        }
+
+        private func applyLaunchMinimumContentSizeIfNeeded(
+            to window: NSWindow,
+            maximumContentSize: CGSize,
+            reason: String
+        ) {
+            guard usesExternalFloatingToolbar else {
+                SpecchioLogger.easyMode.debug("[EasySizing] launch minimum skipped reason=\(reason, privacy: .public) branch=in-window-toolbar")
+                return
+            }
+            guard maximumContentSize.width.isFinite,
+                  maximumContentSize.height.isFinite,
+                  maximumContentSize.width > 0,
+                  maximumContentSize.height > 0 else {
+                SpecchioLogger.easyMode.info("[EasySizing] launch minimum skipped reason=\(reason, privacy: .public) branch=invalid-maximum maximumWidth=\(maximumContentSize.width) maximumHeight=\(maximumContentSize.height)")
+                return
+            }
+
+            let currentContentMinSize = window.contentMinSize
+            let currentFrameMinSize = window.minSize
+            var nextContentMinSize = currentContentMinSize
+            var nextFrameMinSize = currentFrameMinSize
+
+            if currentContentMinSize.width.isFinite,
+               currentContentMinSize.width > maximumContentSize.width + EasyWindowVideoSizing.tolerance {
+                nextContentMinSize.width = maximumContentSize.width
+            }
+            if currentContentMinSize.height.isFinite,
+               currentContentMinSize.height > maximumContentSize.height + EasyWindowVideoSizing.tolerance {
+                nextContentMinSize.height = maximumContentSize.height
+            }
+
+            let maximumFrameMinSize = window.frameRect(forContentRect: CGRect(origin: .zero, size: maximumContentSize)).size
+            if currentFrameMinSize.width.isFinite,
+               currentFrameMinSize.width > maximumFrameMinSize.width + EasyWindowVideoSizing.tolerance {
+                nextFrameMinSize.width = maximumFrameMinSize.width
+            }
+            if currentFrameMinSize.height.isFinite,
+               currentFrameMinSize.height > maximumFrameMinSize.height + EasyWindowVideoSizing.tolerance {
+                nextFrameMinSize.height = maximumFrameMinSize.height
+            }
+
+            let contentChanged = abs(nextContentMinSize.width - currentContentMinSize.width) > EasyWindowVideoSizing.tolerance
+                || abs(nextContentMinSize.height - currentContentMinSize.height) > EasyWindowVideoSizing.tolerance
+            let frameChanged = abs(nextFrameMinSize.width - currentFrameMinSize.width) > EasyWindowVideoSizing.tolerance
+                || abs(nextFrameMinSize.height - currentFrameMinSize.height) > EasyWindowVideoSizing.tolerance
+            guard contentChanged || frameChanged else {
+                SpecchioLogger.easyMode.debug("[EasySizing] launch minimum unchanged reason=\(reason, privacy: .public) contentMinWidth=\(currentContentMinSize.width) contentMinHeight=\(currentContentMinSize.height) frameMinWidth=\(currentFrameMinSize.width) frameMinHeight=\(currentFrameMinSize.height) maximumContentWidth=\(maximumContentSize.width) maximumContentHeight=\(maximumContentSize.height)")
+                return
+            }
+
+            window.contentMinSize = nextContentMinSize
+            window.minSize = nextFrameMinSize
+            SpecchioLogger.easyMode.info("[EasySizing] launch minimum lowered reason=\(reason, privacy: .public) previousContentMinWidth=\(currentContentMinSize.width) previousContentMinHeight=\(currentContentMinSize.height) nextContentMinWidth=\(nextContentMinSize.width) nextContentMinHeight=\(nextContentMinSize.height) previousFrameMinWidth=\(currentFrameMinSize.width) previousFrameMinHeight=\(currentFrameMinSize.height) nextFrameMinWidth=\(nextFrameMinSize.width) nextFrameMinHeight=\(nextFrameMinSize.height) maximumContentWidth=\(maximumContentSize.width) maximumContentHeight=\(maximumContentSize.height)")
         }
 
         private func applyContentSize(_ targetContentSize: CGSize, reason: String, source: String) {
@@ -7381,6 +8880,15 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             isApplyingProgrammaticFrame = true
             defer { isApplyingProgrammaticFrame = false }
             window.setFrame(targetFrame, display: true, animate: false)
+            NotificationCenter.default.post(
+                name: .easyModeProgrammaticWindowFrameDidChange,
+                object: window,
+                userInfo: [
+                    "source": source,
+                    "reason": reason
+                ]
+            )
+            SpecchioLogger.easyMode.info("[EasySizing] programmatic frame notification posted reason=\(reason, privacy: .public) source=\(source, privacy: .public) windowNumber=\(window.windowNumber) frame=\(InputSurfaceDiagnostics.rectString(window.frame), privacy: .public)")
             logWindowGeometryProbe(
                 window,
                 reason: reason,
@@ -7556,6 +9064,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             }
             self.window = nil
             previousDelegate = nil
+            hasAppliedLaunchPreferredContentSize = false
         }
     }
 
@@ -7572,6 +9081,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             minimumContentWidth: minimumContentWidth,
             countsWindowLayoutInsetAsChrome: countsWindowLayoutInsetAsChrome,
             standardControlsVisible: standardControlsVisible,
+            standardTitlebarEnabled: standardTitlebarEnabled,
             reason: "makeCoordinator"
         )
         return controller
@@ -7596,6 +9106,7 @@ private struct EasyWindowAspectRatioAccessor: NSViewRepresentable {
             minimumContentWidth: minimumContentWidth,
             countsWindowLayoutInsetAsChrome: countsWindowLayoutInsetAsChrome,
             standardControlsVisible: standardControlsVisible,
+            standardTitlebarEnabled: standardTitlebarEnabled,
             reason: "updateNSView"
         )
         context.coordinator.attach(to: nsView.window, reason: "updateNSView")
@@ -7656,7 +9167,7 @@ private struct EasyAirPlayVideoIdleOverlay: View {
             }
             .padding(.horizontal, EasyAirPlayVideoIdleMetrics.horizontalPadding)
             .padding(.vertical, EasyAirPlayVideoIdleMetrics.verticalPadding)
-            .background(.regularMaterial)
+            .background(Color.black.opacity(0.56))
             .clipShape(RoundedRectangle(
                 cornerRadius: EasyAirPlayVideoIdleMetrics.cornerRadius,
                 style: .continuous
@@ -7828,7 +9339,7 @@ private struct EasyRotationMismatchOverlay: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.regularMaterial)
+        .background(Color.orange.opacity(0.14))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -7878,7 +9389,7 @@ private struct EasyReplayKitRecoveryOverlay: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.regularMaterial)
+        .background(Color.black.opacity(0.58))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -7947,7 +9458,7 @@ private struct EasyBluetoothAutoConnectOverlay: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.regularMaterial)
+        .background(Color.black.opacity(0.62))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -8132,7 +9643,7 @@ private struct EasyVideoStatusBar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial)
+        .background(Color.black.opacity(0.55))
         .cornerRadius(8)
         .padding(.bottom, 8)
         .onAppear {
