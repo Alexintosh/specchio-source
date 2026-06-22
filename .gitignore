@@ -1,0 +1,29 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+node_modules/
+.vitepress
+.wrangler/
+
+# Xcode user data
+Specchio.xcodeproj/xcuserdata/
+Specchio.xcodeproj/project.xcworkspace/xcuserdata/
+xcuserdata/
+*.xcuserstate
+Specchio.xcworkspace/xcuserdata/
+
+# Build output
+DerivedData/
+build/
+*.xcarchive/
+*.dmg
+*.zip
+*.pkg
+
+# macOS
+.DS_Store
+
+# Generated or externally supplied binaries
+SupportingFiles/AirPlayFairPlay/*.dylib
+SupportingFiles/BundledTools/iproxy
+SupportingFiles/BundledTools/*.dylib

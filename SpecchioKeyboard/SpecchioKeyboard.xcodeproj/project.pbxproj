@@ -1,0 +1,653 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		KB000001 /* SpecchioCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB100001 /* SpecchioCompanionApp.swift */; };
+		KB000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB100002 /* ContentView.swift */; };
+		KB000003 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB100003 /* KeyboardViewController.swift */; };
+		KB000004 /* InputServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB100004 /* InputServer.swift */; };
+		KB000005 /* SpecchioKeyboardExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KB200002 /* SpecchioKeyboardExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		KB000006 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = KB100009 /* Assets.xcassets */; };
+		KB000007 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = KB100010 /* PrivacyInfo.xcprivacy */; };
+		FB61A95F0FE541FB8BA71724 /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03759CAE3EB4496B81D14346 /* SampleHandler.swift */; };
+		RKAUDE000000000001 /* ReplayKitAudioEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKAUDE000000000002 /* ReplayKitAudioEncoder.swift */; };
+		RKAUDS000000000001 /* ReplayKitAudioSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKAUDS000000000002 /* ReplayKitAudioSender.swift */; };
+		CE84705405CF4941A58E18FC /* ReplayKitFrameEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE716A590B234BEEB2F1238A /* ReplayKitFrameEncoder.swift */; };
+		E6737AC40C6F4DC49BBCD0DB /* ReplayKitFrameSender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 733D590B701B4E00A916D8DF /* ReplayKitFrameSender.swift */; };
+		RKMPKBAPP00000000001 /* ReplayKitMediaProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKMPKB0000000000002 /* ReplayKitMediaProtocol.swift */; };
+		RKMPKBBRD00000000001 /* ReplayKitMediaProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKMPKB0000000000002 /* ReplayKitMediaProtocol.swift */; };
+		RKVENC00000000000001 /* ReplayKitVideoEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKVENC00000000000002 /* ReplayKitVideoEncoder.swift */; };
+		33266732319E4C35924AB66D /* SpecchioKeyboardBroadcastExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = DA0C52DEE2CC4E46BE2E2DDF /* SpecchioKeyboardBroadcastExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		KB900002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = KB000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = KB600002;
+			remoteInfo = SpecchioKeyboardExtension;
+		};
+		936B6CFF2BEC4767BE5AE30F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = KB000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A9D7E2A1486D41E0940A9A6B;
+			remoteInfo = SpecchioKeyboardBroadcastExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		KB300001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				KB000005 /* SpecchioKeyboardExtension.appex in Embed App Extensions */,
+				33266732319E4C35924AB66D /* SpecchioKeyboardBroadcastExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		KB100001 /* SpecchioCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecchioCompanionApp.swift; sourceTree = "<group>"; };
+		KB100002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		KB100003 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		KB100004 /* InputServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputServer.swift; sourceTree = "<group>"; };
+		KB100005 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KB100006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KB100007 /* SpecchioCompanionApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpecchioCompanionApp.entitlements; sourceTree = "<group>"; };
+		KB100008 /* SpecchioKeyboardExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpecchioKeyboardExtension.entitlements; sourceTree = "<group>"; };
+		KB100009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		KB100010 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		KB200001 /* Specchio Companion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Specchio Companion.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		KB200002 /* SpecchioKeyboardExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpecchioKeyboardExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		03759CAE3EB4496B81D14346 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
+		RKAUDE000000000002 /* ReplayKitAudioEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitAudioEncoder.swift; sourceTree = "<group>"; };
+		RKAUDS000000000002 /* ReplayKitAudioSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitAudioSender.swift; sourceTree = "<group>"; };
+		FE716A590B234BEEB2F1238A /* ReplayKitFrameEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitFrameEncoder.swift; sourceTree = "<group>"; };
+		733D590B701B4E00A916D8DF /* ReplayKitFrameSender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitFrameSender.swift; sourceTree = "<group>"; };
+		RKMPKB0000000000002 /* ReplayKitMediaProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReplayKitMediaProtocol.swift; path = ../Shared/ReplayKitMediaProtocol.swift; sourceTree = SOURCE_ROOT; };
+		RKVENC00000000000002 /* ReplayKitVideoEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitVideoEncoder.swift; sourceTree = "<group>"; };
+		EBD693F9B96B49D8B1C0762A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		CC60371E64DB4EBAA482C6A7 /* SpecchioKeyboardBroadcastExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SpecchioKeyboardBroadcastExtension.entitlements; sourceTree = "<group>"; };
+		DA0C52DEE2CC4E46BE2E2DDF /* SpecchioKeyboardBroadcastExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpecchioKeyboardBroadcastExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		KB400001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KB400002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C2577F658ED64D1CA9C811EA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		KB500001 = {
+			isa = PBXGroup;
+			children = (
+				RKMPKB0000000000002 /* ReplayKitMediaProtocol.swift */,
+				KB500002 /* SpecchioCompanionApp */,
+				KB500003 /* SpecchioKeyboardExtension */,
+				E478BD9684324B1F84212B7F /* SpecchioKeyboardBroadcastExtension */,
+				KB500004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		KB500002 /* SpecchioCompanionApp */ = {
+			isa = PBXGroup;
+			children = (
+				KB100001 /* SpecchioCompanionApp.swift */,
+				KB100002 /* ContentView.swift */,
+				KB100009 /* Assets.xcassets */,
+				KB100010 /* PrivacyInfo.xcprivacy */,
+				KB100005 /* Info.plist */,
+				KB100007 /* SpecchioCompanionApp.entitlements */,
+			);
+			path = SpecchioCompanionApp;
+			sourceTree = "<group>";
+		};
+		KB500003 /* SpecchioKeyboardExtension */ = {
+			isa = PBXGroup;
+			children = (
+				KB100003 /* KeyboardViewController.swift */,
+				KB100004 /* InputServer.swift */,
+				KB100006 /* Info.plist */,
+				KB100008 /* SpecchioKeyboardExtension.entitlements */,
+			);
+			path = SpecchioKeyboardExtension;
+			sourceTree = "<group>";
+		};
+		E478BD9684324B1F84212B7F /* SpecchioKeyboardBroadcastExtension */ = {
+			isa = PBXGroup;
+			children = (
+				03759CAE3EB4496B81D14346 /* SampleHandler.swift */,
+				RKAUDE000000000002 /* ReplayKitAudioEncoder.swift */,
+				RKAUDS000000000002 /* ReplayKitAudioSender.swift */,
+				FE716A590B234BEEB2F1238A /* ReplayKitFrameEncoder.swift */,
+				733D590B701B4E00A916D8DF /* ReplayKitFrameSender.swift */,
+				RKVENC00000000000002 /* ReplayKitVideoEncoder.swift */,
+				EBD693F9B96B49D8B1C0762A /* Info.plist */,
+				CC60371E64DB4EBAA482C6A7 /* SpecchioKeyboardBroadcastExtension.entitlements */,
+			);
+			path = SpecchioKeyboardBroadcastExtension;
+			sourceTree = "<group>";
+		};
+		KB500004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				KB200001 /* Specchio Companion.app */,
+				KB200002 /* SpecchioKeyboardExtension.appex */,
+				DA0C52DEE2CC4E46BE2E2DDF /* SpecchioKeyboardBroadcastExtension.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		KB600001 /* Specchio Companion */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KB700001 /* Build configuration list for PBXNativeTarget "Specchio Companion" */;
+			buildPhases = (
+				KB800001 /* Sources */,
+				KB400001 /* Frameworks */,
+				KB800003 /* Resources */,
+				KB300001 /* Embed App Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				KB900001 /* PBXTargetDependency */,
+				FA03EA7D4F724CE3AF0CB8B7 /* PBXTargetDependency */,
+			);
+			name = "Specchio Companion";
+			productName = "Specchio Companion";
+			productReference = KB200001 /* Specchio Companion.app */;
+			productType = "com.apple.product-type.application";
+		};
+		KB600002 /* SpecchioKeyboardExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KB700002 /* Build configuration list for PBXNativeTarget "SpecchioKeyboardExtension" */;
+			buildPhases = (
+				KB800002 /* Sources */,
+				KB400002 /* Frameworks */,
+				KB800004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpecchioKeyboardExtension;
+			productName = SpecchioKeyboardExtension;
+			productReference = KB200002 /* SpecchioKeyboardExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A9D7E2A1486D41E0940A9A6B /* SpecchioKeyboardBroadcastExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 929E9FBB5C8C4508B3A4CDB8 /* Build configuration list for PBXNativeTarget "SpecchioKeyboardBroadcastExtension" */;
+			buildPhases = (
+				2CD8839DAB33428E89690C2B /* Sources */,
+				C2577F658ED64D1CA9C811EA /* Frameworks */,
+				64F764C55AA94006A629570D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SpecchioKeyboardBroadcastExtension;
+			productName = SpecchioKeyboardBroadcastExtension;
+			productReference = DA0C52DEE2CC4E46BE2E2DDF /* SpecchioKeyboardBroadcastExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		KB000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1400;
+				LastUpgradeCheck = 1400;
+				TargetAttributes = {
+					KB600001 = {
+						CreatedOnToolsVersion = 14.0;
+					};
+					KB600002 = {
+						CreatedOnToolsVersion = 14.0;
+					};
+					A9D7E2A1486D41E0940A9A6B = {
+						CreatedOnToolsVersion = 14.0;
+					};
+				};
+			};
+			buildConfigurationList = KB700000 /* Build configuration list for PBXProject "SpecchioKeyboard" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = KB500001;
+			productRefGroup = KB500004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				KB600001 /* Specchio Companion */,
+				KB600002 /* SpecchioKeyboardExtension */,
+				A9D7E2A1486D41E0940A9A6B /* SpecchioKeyboardBroadcastExtension */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		KB800003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KB000006 /* Assets.xcassets in Resources */,
+				KB000007 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KB800004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		64F764C55AA94006A629570D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		KB800001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KB000001 /* SpecchioCompanionApp.swift in Sources */,
+				KB000002 /* ContentView.swift in Sources */,
+				RKMPKBAPP00000000001 /* ReplayKitMediaProtocol.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KB800002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KB000003 /* KeyboardViewController.swift in Sources */,
+				KB000004 /* InputServer.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2CD8839DAB33428E89690C2B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB61A95F0FE541FB8BA71724 /* SampleHandler.swift in Sources */,
+				RKAUDE000000000001 /* ReplayKitAudioEncoder.swift in Sources */,
+				RKAUDS000000000001 /* ReplayKitAudioSender.swift in Sources */,
+				CE84705405CF4941A58E18FC /* ReplayKitFrameEncoder.swift in Sources */,
+				E6737AC40C6F4DC49BBCD0DB /* ReplayKitFrameSender.swift in Sources */,
+				RKMPKBBRD00000000001 /* ReplayKitMediaProtocol.swift in Sources */,
+				RKVENC00000000000001 /* ReplayKitVideoEncoder.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		KB900001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = KB600002 /* SpecchioKeyboardExtension */;
+			targetProxy = KB900002 /* PBXContainerItemProxy */;
+		};
+		FA03EA7D4F724CE3AF0CB8B7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A9D7E2A1486D41E0940A9A6B /* SpecchioKeyboardBroadcastExtension */;
+			targetProxy = 936B6CFF2BEC4767BE5AE30F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		KBA00001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		KBA00002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		KBA00003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SpecchioCompanionApp/SpecchioCompanionApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpecchioCompanionApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
+				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard;
+				PRODUCT_NAME = "Specchio Companion";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		KBA00004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = SpecchioCompanionApp/SpecchioCompanionApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpecchioCompanionApp/Info.plist;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
+				INFOPLIST_KEY_UILaunchScreen_Generation = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard;
+				PRODUCT_NAME = "Specchio Companion";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		KBA00005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SpecchioKeyboardExtension/SpecchioKeyboardExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				INFOPLIST_FILE = SpecchioKeyboardExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		KBA00006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SpecchioKeyboardExtension/SpecchioKeyboardExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				INFOPLIST_FILE = SpecchioKeyboardExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard.keyboard;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9C3BBCDC05CC4A19A4991794 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SpecchioKeyboardBroadcastExtension/SpecchioKeyboardBroadcastExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpecchioKeyboardBroadcastExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard.broadcast;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0AC7D09D8C954279A8F85B68 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = SpecchioKeyboardBroadcastExtension/SpecchioKeyboardBroadcastExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SpecchioKeyboardBroadcastExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../../Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioKeyboard.broadcast;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		KB700000 /* Build configuration list for PBXProject "SpecchioKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KBA00001 /* Debug */,
+				KBA00002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KB700001 /* Build configuration list for PBXNativeTarget "Specchio Companion" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KBA00003 /* Debug */,
+				KBA00004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KB700002 /* Build configuration list for PBXNativeTarget "SpecchioKeyboardExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KBA00005 /* Debug */,
+				KBA00006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		929E9FBB5C8C4508B3A4CDB8 /* Build configuration list for PBXNativeTarget "SpecchioKeyboardBroadcastExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C3BBCDC05CC4A19A4991794 /* Debug */,
+				0AC7D09D8C954279A8F85B68 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = KB000000 /* Project object */;
+}

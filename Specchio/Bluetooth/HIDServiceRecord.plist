@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>0000 - ServiceRecordHandle</key>
+	<real>65536</real>
+	<key>0001 - ServiceClassIDList</key>
+	<array>
+		<data>ESQ=</data>
+	</array>
+	<key>0004 - ProtocolDescriptorList</key>
+	<array>
+		<array>
+			<data>AQA=</data>
+			<dict>
+				<key>DataElementSize</key>
+				<integer>0</integer>
+				<key>DataElementType</key>
+				<integer>1</integer>
+				<key>DataElementValue</key>
+				<data>ABE=</data>
+			</dict>
+		</array>
+		<array>
+			<data>ABE=</data>
+		</array>
+	</array>
+	<key>0005 - BrowseGroupList</key>
+	<array>
+		<data>EAI=</data>
+	</array>
+	<key>0006 - LanguageBaseAttributeIDList</key>
+	<array>
+		<dict>
+			<key>DataElementSize</key>
+			<integer>0</integer>
+			<key>DataElementType</key>
+			<integer>1</integer>
+			<key>DataElementValue</key>
+			<data>ZW4=</data>
+		</dict>
+		<dict>
+			<key>DataElementSize</key>
+			<integer>0</integer>
+			<key>DataElementType</key>
+			<integer>1</integer>
+			<key>DataElementValue</key>
+			<data>AGo=</data>
+		</dict>
+		<dict>
+			<key>DataElementSize</key>
+			<integer>0</integer>
+			<key>DataElementType</key>
+			<integer>1</integer>
+			<key>DataElementValue</key>
+			<data>AQA=</data>
+		</dict>
+	</array>
+	<key>0009 - BluetoothProfileDescriptorList</key>
+	<array>
+		<array>
+			<data>ESQ=</data>
+			<dict>
+				<key>DataElementSize</key>
+				<integer>0</integer>
+				<key>DataElementType</key>
+				<integer>1</integer>
+				<key>DataElementValue</key>
+				<data>AQE=</data>
+			</dict>
+		</array>
+	</array>
+	<key>000D - AdditionalProtocolDList</key>
+	<array>
+		<array>
+			<array>
+				<data>AQA=</data>
+				<dict>
+					<key>DataElementSize</key>
+					<integer>0</integer>
+					<key>DataElementType</key>
+					<integer>1</integer>
+					<key>DataElementValue</key>
+					<data>ABM=</data>
+				</dict>
+			</array>
+			<array>
+				<data>ABE=</data>
+			</array>
+		</array>
+	</array>
+	<key>0100 - ServiceName</key>
+	<string>Specchio Keyboard</string>
+	<key>0101 - ServiceDescription</key>
+	<string>Keyboard</string>
+	<key>0102 - ProviderName</key>
+	<string>Specchio</string>
+	<key>0201 - HIDParserVersion</key>
+	<dict>
+		<key>DataElementSize</key>
+		<integer>0</integer>
+		<key>DataElementType</key>
+		<integer>1</integer>
+		<key>DataElementValue</key>
+		<data>ARE=</data>
+	</dict>
+	<key>0202 - HIDDeviceSubclass</key>
+	<dict>
+		<key>DataElementSize</key>
+		<integer>0</integer>
+		<key>DataElementType</key>
+		<integer>1</integer>
+		<key>DataElementValue</key>
+		<data>wA==</data>
+	</dict>
+	<key>0203 - HIDCountryCode</key>
+	<dict>
+		<key>DataElementSize</key>
+		<integer>0</integer>
+		<key>DataElementType</key>
+		<integer>1</integer>
+		<key>DataElementValue</key>
+		<data>IQ==</data>
+	</dict>
+	<key>0204 - HIDVirtualCable</key>
+	<true/>
+	<key>0205 - HIDReconnectInitiate</key>
+	<true/>
+	<key>0206 - HIDDescriptorList</key>
+	<array>
+		<array>
+			<dict>
+				<key>DataElementSize</key>
+				<integer>0</integer>
+				<key>DataElementType</key>
+				<integer>1</integer>
+				<key>DataElementValue</key>
+				<data>Ig==</data>
+			</dict>
+			<dict>
+				<key>DataElementType</key>
+				<integer>4</integer>
+				<key>DataElementValue</key>
+				<data>BQEJBqEBhQEFBxngKecVACUBdQGVCIEClQF1CIEBBQgZASkFlQV1AZEClQF1A5EBBQcZACr/AJUGdQgVACb/AIEABf8JA3UIlQGBAsAFDAkBoQGFAhUAJQF1AZUOCiQCCUAKIwIKrgEKIQIJtgnNCbUJ4gnqCekJMAlwCW+BApUBdQKBA8AFAQkCoQGFCgUJGQEpAhUAJQGVAnUBgQKVAXUGgQMFAQkBoQAVgSV/CTAJMQkyCTh1CJUEgQbAwAUBCQKhAYULBQkZASkCFQAlAZUCdQGBApUBdQaBAwUBCQGhABUAJv9/dRCVAgkwCTGBAsDA</data>
+			</dict>
+		</array>
+	</array>
+	<key>0207 - HIDLANGIDBaseList</key>
+	<array>
+		<dict>
+			<key>DataElementSize</key>
+			<integer>0</integer>
+			<key>DataElementType</key>
+			<integer>1</integer>
+			<key>DataElementValue</key>
+			<data>BAk=</data>
+		</dict>
+		<dict>
+			<key>DataElementSize</key>
+			<integer>0</integer>
+			<key>DataElementType</key>
+			<integer>1</integer>
+			<key>DataElementValue</key>
+			<data>AQA=</data>
+		</dict>
+	</array>
+	<key>0209 - HIDBatteryPower</key>
+	<true/>
+	<key>020A - HIDRemoteWake</key>
+	<true/>
+	<key>020B - HIDProfileVersion</key>
+	<dict>
+		<key>DataElementSize</key>
+		<integer>0</integer>
+		<key>DataElementType</key>
+		<integer>1</integer>
+		<key>DataElementValue</key>
+		<data>AQA=</data>
+	</dict>
+	<key>020C - HIDSupervisionTimeout</key>
+	<dict>
+		<key>DataElementSize</key>
+		<integer>0</integer>
+		<key>DataElementType</key>
+		<integer>1</integer>
+		<key>DataElementValue</key>
+		<data>H0A=</data>
+	</dict>
+	<key>020D - HIDNormallyConnectable</key>
+	<true/>
+	<key>020E - HIDBootDevice</key>
+	<true/>
+</dict>
+</plist>

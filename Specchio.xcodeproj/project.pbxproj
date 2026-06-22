@@ -1,0 +1,986 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0187372A5BF5F3C2AF7B3509 /* SpecchioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197F749F63673F6E86F8B26B /* SpecchioApp.swift */; };
+		01D6BB76CA731AFDA8F4C765 /* USBVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F8FDA5E7448C5B90B6F775 /* USBVideoView.swift */; };
+		0C1A455AE328ECE857A22D2A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C4F9E0E8EEF4C89FB82A98E /* SettingsView.swift */; };
+		0C5C7C6961698EB1C6866C61 /* WDATypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0086062E397379233B5F7458 /* WDATypes.swift */; };
+		FDIAG000000000000001 /* FrameDropDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDIAG000000000000002 /* FrameDropDiagnostics.swift */; };
+		0E6DEE85B7AAAC7D6806CB12 /* FrameRateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 997CF8235EDD08C8CFDD7311 /* FrameRateController.swift */; };
+		RKAUDSTR00000000001 /* ReplayKitAudioStreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKAUDSTR00000000002 /* ReplayKitAudioStreamManager.swift */; };
+		3C3E26A2F1F341AA9D37AF96 /* ReplayKitScreenStreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0FF4AD9FFD4849A1E7718C /* ReplayKitScreenStreamManager.swift */; };
+		15363FEFCB0264C3FAE8E937 /* MirrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74928C9057AF2DEE969206D /* MirrorView.swift */; };
+		526C5E7AAE1F421CABD289F2 /* EasyModeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3807D39E7E1241EE913CB04D /* EasyModeView.swift */; };
+		9F68F51AE0FA4F3392C73997 /* ModeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D8EDBC3C93C4A21A2C5CCBE /* ModeSelectionView.swift */; };
+		IOSMGR0000000000000001 /* IOSScreenCaptureManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOSMGR0000000000000002 /* IOSScreenCaptureManager.swift */; };
+		IOSMON0000000000000001 /* IOSScreenCaptureDeviceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = IOSMON0000000000000002 /* IOSScreenCaptureDeviceMonitor.swift */; };
+		IVP001000000000000000001 /* InternalVideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = IVP001000000000000000002 /* InternalVideoPlayerView.swift */; };
+		SPC001000000000000000001 /* SpecchioSharedControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPC001000000000000000002 /* SpecchioSharedControls.swift */; };
+		GSW000000000000000001 /* SWGlowSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = GSW000000000000000002 /* SWGlowSweep.swift */; };
+		PLS000000000000000001 /* SWPlasma.swift in Sources */ = {isa = PBXBuildFile; fileRef = PLS000000000000000002 /* SWPlasma.swift */; };
+		BT000001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift */; };
+		BT000002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift */; };
+		BT000003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist in Resources */ = {isa = PBXBuildFile; fileRef = BT100003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist */; };
+		PAYWALLASSETBUILD001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = PAYWALLASSETREF0001 /* Assets.xcassets */; };
+		BT000004B7A5E4D3C2B1A0904 /* KeyPadClone.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100004B7A5E4D3C2B1A0904 /* KeyPadClone.swift */; };
+		MB1A2B3C4D5E6F7081920001 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB1A2B3C4D5E6F7081920002 /* MenuBarView.swift */; };
+		18331EE26D4E0F8DDB4A1D5A /* USBVideoDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42327BFA53E2690DD3EAD6B6 /* USBVideoDisplay.swift */; };
+		1A8E38DE3C396EA4463741C7 /* Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DA3C2F5957A57287457E18 /* Logger.swift */; };
+		1C450B1C2D3E4F5061728300 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 1C450C1D2E3F405162738000 /* AppIcon.icns */; };
+		23078699FEE0F2F39CBC1BA1 /* InputTranslatorPinchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9873F0F87E2B9F6F427CB1C /* InputTranslatorPinchTests.swift */; };
+		2A596AB9F8B4C11B46FC0BDD /* CoordinateMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACEACDABBBC2AB26890D4D80 /* CoordinateMapperTests.swift */; };
+		2D6AF256408B3710977AF0F5 /* USBDeviceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EAFD298FA672845646D1C5 /* USBDeviceMonitor.swift */; };
+		34A554A64429F5E066E0B99D /* CoordinateMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 253758CB791266F6AC697BCC /* CoordinateMapper.swift */; };
+		3DC1A0AD20EFD4E2013EF082 /* InputOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F87C7D8FBBC4364D4546F9C /* InputOverlayView.swift */; };
+		3EAB925F9902E0BA12287C58 /* AccessibilityTreeDiffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18706E8075E15D9A364F9AC /* AccessibilityTreeDiffer.swift */; };
+		4E3F328F83C1EC46B6DB421C /* InputOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11DE9B19B062CC02C8F0BBA /* InputOverlay.swift */; };
+		51FEAF7124213BC6E0A049EA /* USBTunnel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F38F4B180C7EA1A227A2127 /* USBTunnel.swift */; };
+		64F9A902FF1A429603D2BDBE /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F01ADA710B7DB9F9F85610 /* Settings.swift */; };
+		70E7B01D7886AFBCBFBFE741 /* InputTranslator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53F054742116289B62FCBB68 /* InputTranslator.swift */; };
+		72A082B8182BCA82926F308E /* WDAClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A43EAC5F75D43F4A85C5973 /* WDAClient.swift */; };
+		WDAIS0000000000000000001 /* WDAInputSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = WDAIS0000000000000000002 /* WDAInputSocket.swift */; };
+		72F27B071798027076CC5FD0 /* ClipboardSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 318CAB0CFFFADDCF4910DB44 /* ClipboardSync.swift */; };
+		8799484D162F3A0327346996 /* ProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEDB417F6A237A8C4258FA3D /* ProcessRunner.swift */; };
+		87E19FA0C30F80B6BB15481D /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7501681F24DBF17AC0DE2B95 /* AppState.swift */; };
+		LM1B2C3D4E5F60718293A4B8 /* LicenseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = LM1B2C3D4E5F60718293A4B7 /* LicenseManager.swift */; };
+		PC1A2B3C4D5E6F7081920001 /* PasscodeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = PC1A2B3C4D5E6F7081920002 /* PasscodeManager.swift */; };
+		PU1B2C3D4E5F60718293A4B0 /* PremiumUpsellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = PU1B2C3D4E5F60718293A4B1 /* PremiumUpsellView.swift */; };
+		941EE13E3F5ED68704A5E50B /* MJPEGStreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = D231CB81D8ECC4931632B371 /* MJPEGStreamManager.swift */; };
+		9D4D0B6B212ED8ACD22424C2 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2368C4DBBB114377037F14B7 /* MainWindow.swift */; };
+		9E4D3E2C8BF8F2E7FE781D1D /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D31B34BB46982146A203F97 /* ToolbarView.swift */; };
+		A1B2C3D4E5F607182930A001 /* H264StreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F607182930A002 /* H264StreamManager.swift */; };
+		RKH264DEC000000000001 /* ReplayKitH264VideoDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKH264DEC000000000002 /* ReplayKitH264VideoDecoder.swift */; };
+		RKMP0000000000000001 /* ReplayKitMediaProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKMP0000000000000002 /* ReplayKitMediaProtocol.swift */; };
+		RKTEST00000000000001 /* ReplayKitMediaProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = RKTEST00000000000002 /* ReplayKitMediaProtocolTests.swift */; };
+		A7785D56156E522BECFF2244 /* AccessibilityTreeParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38CF2F3CB01618D584233183 /* AccessibilityTreeParserTests.swift */; };
+		AA1B2C3D4E5F60718293A4B5 /* AutoLaunchManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F60718293A4B6 /* AutoLaunchManager.swift */; };
+		B11B1E02391F4033F91FC1A5 /* WDAClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D593BF67AFD3B320A88A7D07 /* WDAClientTests.swift */; };
+		B12FA8786F0214F423E186A6 /* KeyboardMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D92821B21504677DE8C9160 /* KeyboardMapper.swift */; };
+		BB2C3D4E5F60718293A4B5C6 /* WDALauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB2C3D4E5F60718293A4B5C7 /* WDALauncher.swift */; };
+		BD0FC4F2662850EF83E4E1E3 /* WiFiDeviceDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 521758964AEEDED50386B7E4 /* WiFiDeviceDiscovery.swift */; };
+		BDA369CE0E919925693D0389 /* DisplayProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6034ED38C99BBD688B90875D /* DisplayProtocol.swift */; };
+		C0B1C2D3E4F5061728394A00 /* ConnectionMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A1B2C3D4E5F60718293000 /* ConnectionMonitor.swift */; };
+		C57D1F9DDA837EB30AF0DCA4 /* AccessibilityTreeParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05BA3DB09DA832EE1D74E26D /* AccessibilityTreeParser.swift */; };
+		CC3D4E5F60718293A4B5C6D7 /* DeviceDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3D4E5F60718293A4B5C6D8 /* DeviceDetector.swift */; };
+		CC4E5F60718293A4B5C6D7F1 /* WDABuildCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4E5F60718293A4B5C6D7F0 /* WDABuildCache.swift */; };
+		CD1B96E2C2BB242789697935 /* ScreenshotDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6644468E8E7B411A55E34A63 /* ScreenshotDisplay.swift */; };
+		D499706AF5ADE60F3ECCDF28 /* AccessibilityDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDE61BC970B8AF4776EDE04 /* AccessibilityDisplay.swift */; };
+		DD4E5F60718293A4B5C6D7E8 /* DependencyChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4E5F60718293A4B5C6D7E9 /* DependencyChecker.swift */; };
+		E1DF29105973CFA8FB897443 /* StatusBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820B4E6C3FAA157466078261 /* StatusBarView.swift */; };
+		E302F1325EEA3564BB619DCC /* ConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12CA8D67AC5648FEA36FD9E5 /* ConnectionState.swift */; };
+		EE5F60718293A4B5C6D7E8F9 /* BundledTools in Copy BundledTools */ = {isa = PBXBuildFile; fileRef = EE5F60718293A4B5C6D7E900 /* BundledTools */; };
+		F25BCD1340540ADCA0E73AFB /* DevicePickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F346656B583832127362FF9 /* DevicePickerView.swift */; };
+		FA8A86FF32CE97C67C564D71 /* DeviceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B4A98C37E94D277ED2136E0 /* DeviceManager.swift */; };
+		FCEDCA71CA4B376E4BDA5750 /* ScreenshotSaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 844B0F42B0E04B64053180F0 /* ScreenshotSaver.swift */; };
+		SC1A2B3C4D5E6F7081920001 /* SetupChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = SC1A2B3C4D5E6F7081920002 /* SetupChecker.swift */; };
+		SW1A2B3C4D5E6F7081920003 /* SetupWizardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SW1A2B3C4D5E6F7081920004 /* SetupWizardView.swift */; };
+		0EE0729273835ECAB67187FB /* OnboardingWelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 832F61315EA05EB29B057B1F /* OnboardingWelcomeView.swift */; };
+		7C74993C970D4620BCDD1520 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE8BBF41FFCB4E61A85D213A /* DiagnosticsView.swift */; };
+		FU1A2B3C4D5E6F7081920001 /* ForceUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FU1A2B3C4D5E6F7081920002 /* ForceUpdateChecker.swift */; };
+		FV1A2B3C4D5E6F7081920003 /* ForceUpdateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FV1A2B3C4D5E6F7081920004 /* ForceUpdateView.swift */; };
+		KB1A2B3C4D5E6F7081920001 /* KeyboardExtSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB1A2B3C4D5E6F7081920002 /* KeyboardExtSocket.swift */; };
+		KB1A2B3C4D5E6F7081920003 /* KeyboardExtLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = KB1A2B3C4D5E6F7081920004 /* KeyboardExtLauncher.swift */; };
+		AIRPBF00000000000000001 /* AirPlayStreamHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000001 /* AirPlayStreamHealth.swift */; };
+		AIRPBF00000000000000002 /* AirPlayControlRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000002 /* AirPlayControlRequest.swift */; };
+		AIRPBF00000000000000003 /* AirPlayControlResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000003 /* AirPlayControlResponse.swift */; };
+		AIRPBF00000000000000004 /* AirPlayBonjourPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000004 /* AirPlayBonjourPublisher.swift */; };
+		AIRPBF00000000000000005 /* AirPlayPairingSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000005 /* AirPlayPairingSession.swift */; };
+		AIRPBF00000000000000006 /* AirPlayFairPlaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000006 /* AirPlayFairPlaySession.swift */; };
+		AIRPBF00000000000000007 /* AirPlayMirrorPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000007 /* AirPlayMirrorPacket.swift */; };
+		AIRPBF00000000000000008 /* AirPlayH264FrameAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000008 /* AirPlayH264FrameAdapter.swift */; };
+		AIRPBF00000000000000009 /* AirPlayMirrorDataServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000009 /* AirPlayMirrorDataServer.swift */; };
+		AIRPBF00000000000000010 /* AirPlayControlServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000010 /* AirPlayControlServer.swift */; };
+		AIRPBF00000000000000011 /* AirPlayScreenStreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000011 /* AirPlayScreenStreamManager.swift */; };
+		AIRPBF00000000000000012 /* AirPlayTimingServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000012 /* AirPlayTimingServer.swift */; };
+		AIRPBF00000000000000013 /* AirPlayAudioSinkServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000013 /* AirPlayAudioSinkServer.swift */; };
+		AIRPBF00000000000000014 /* AirPlayH264DumpWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */; };
+		AIRPTB00000000000000001 /* AirPlayProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */; };
+		FPLAYBF0000000000000001 /* libfairplay.dylib in Copy AirPlay FairPlay Provider */ = {isa = PBXBuildFile; fileRef = FPLAYFR0000000000000001 /* libfairplay.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		BAD0EFF7744C45CC617E2811 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 755C622C31892C73E7F33E3E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 46F0ED39BC30F94FD501D3EC;
+			remoteInfo = Specchio;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FF718293A4B5C6D7E8F90011 /* Copy BundledTools */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 7;
+			files = (
+				EE5F60718293A4B5C6D7E8F9 /* BundledTools in Copy BundledTools */,
+			);
+			name = "Copy BundledTools";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FPLAYCP0000000000000001 /* Copy AirPlay FairPlay Provider */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				FPLAYBF0000000000000001 /* libfairplay.dylib in Copy AirPlay FairPlay Provider */,
+			);
+			name = "Copy AirPlay FairPlay Provider";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0086062E397379233B5F7458 /* WDATypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDATypes.swift; sourceTree = "<group>"; };
+		05BA3DB09DA832EE1D74E26D /* AccessibilityTreeParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTreeParser.swift; sourceTree = "<group>"; };
+		0D92821B21504677DE8C9160 /* KeyboardMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMapper.swift; sourceTree = "<group>"; };
+		RKAUDSTR00000000002 /* ReplayKitAudioStreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitAudioStreamManager.swift; sourceTree = "<group>"; };
+		0E0FF4AD9FFD4849A1E7718C /* ReplayKitScreenStreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitScreenStreamManager.swift; sourceTree = "<group>"; };
+		0F346656B583832127362FF9 /* DevicePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePickerView.swift; sourceTree = "<group>"; };
+		12CA8D67AC5648FEA36FD9E5 /* ConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionState.swift; sourceTree = "<group>"; };
+		197F749F63673F6E86F8B26B /* SpecchioApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecchioApp.swift; sourceTree = "<group>"; };
+		1C450C1D2E3F405162738000 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; name = AppIcon.icns; path = SupportingFiles/AppIcon.icns; sourceTree = "<group>"; };
+		1C4F9E0E8EEF4C89FB82A98E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		1F87C7D8FBBC4364D4546F9C /* InputOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputOverlayView.swift; sourceTree = "<group>"; };
+		2368C4DBBB114377037F14B7 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
+		253758CB791266F6AC697BCC /* CoordinateMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMapper.swift; sourceTree = "<group>"; };
+		318CAB0CFFFADDCF4910DB44 /* ClipboardSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardSync.swift; sourceTree = "<group>"; };
+		3807D39E7E1241EE913CB04D /* EasyModeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EasyModeView.swift; sourceTree = "<group>"; };
+		38CF2F3CB01618D584233183 /* AccessibilityTreeParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTreeParserTests.swift; sourceTree = "<group>"; };
+		3A43EAC5F75D43F4A85C5973 /* WDAClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDAClient.swift; sourceTree = "<group>"; };
+		WDAIS0000000000000000002 /* WDAInputSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDAInputSocket.swift; sourceTree = "<group>"; };
+		42327BFA53E2690DD3EAD6B6 /* USBVideoDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBVideoDisplay.swift; sourceTree = "<group>"; };
+		521758964AEEDED50386B7E4 /* WiFiDeviceDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiDeviceDiscovery.swift; sourceTree = "<group>"; };
+		53F054742116289B62FCBB68 /* InputTranslator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputTranslator.swift; sourceTree = "<group>"; };
+		6034ED38C99BBD688B90875D /* DisplayProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayProtocol.swift; sourceTree = "<group>"; };
+		6644468E8E7B411A55E34A63 /* ScreenshotDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotDisplay.swift; sourceTree = "<group>"; };
+		6B4A98C37E94D277ED2136E0 /* DeviceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceManager.swift; sourceTree = "<group>"; };
+		70F2988C7FE80C4269900005 /* SpecchioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SpecchioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7501681F24DBF17AC0DE2B95 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		7D31B34BB46982146A203F97 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
+		7F38F4B180C7EA1A227A2127 /* USBTunnel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBTunnel.swift; sourceTree = "<group>"; };
+		820B4E6C3FAA157466078261 /* StatusBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarView.swift; sourceTree = "<group>"; };
+		8D8EDBC3C93C4A21A2C5CCBE /* ModeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeSelectionView.swift; sourceTree = "<group>"; };
+		844B0F42B0E04B64053180F0 /* ScreenshotSaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSaver.swift; sourceTree = "<group>"; };
+		8EDE61BC970B8AF4776EDE04 /* AccessibilityDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityDisplay.swift; sourceTree = "<group>"; };
+		997CF8235EDD08C8CFDD7311 /* FrameRateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameRateController.swift; sourceTree = "<group>"; };
+		FDIAG000000000000002 /* FrameDropDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameDropDiagnostics.swift; sourceTree = "<group>"; };
+		IOSMGR0000000000000002 /* IOSScreenCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSScreenCaptureManager.swift; sourceTree = "<group>"; };
+		IOSMON0000000000000002 /* IOSScreenCaptureDeviceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSScreenCaptureDeviceMonitor.swift; sourceTree = "<group>"; };
+		IVP001000000000000000002 /* InternalVideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternalVideoPlayerView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F607182930A002 /* H264StreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H264StreamManager.swift; sourceTree = "<group>"; };
+		RKH264DEC000000000002 /* ReplayKitH264VideoDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitH264VideoDecoder.swift; sourceTree = "<group>"; };
+		RKMP0000000000000002 /* ReplayKitMediaProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReplayKitMediaProtocol.swift; path = Shared/ReplayKitMediaProtocol.swift; sourceTree = SOURCE_ROOT; };
+		RKTEST00000000000002 /* ReplayKitMediaProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitMediaProtocolTests.swift; sourceTree = "<group>"; };
+		A2EAFD298FA672845646D1C5 /* USBDeviceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBDeviceMonitor.swift; sourceTree = "<group>"; };
+		A9DA3C2F5957A57287457E18 /* Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logger.swift; sourceTree = "<group>"; };
+		LM1B2C3D4E5F60718293A4B7 /* LicenseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseManager.swift; sourceTree = "<group>"; };
+		PC1A2B3C4D5E6F7081920002 /* PasscodeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasscodeManager.swift; sourceTree = "<group>"; };
+		PU1B2C3D4E5F60718293A4B1 /* PremiumUpsellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PremiumUpsellView.swift; sourceTree = "<group>"; };
+		PAYWALLASSETREF0001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
+		AA1B2C3D4E5F60718293A4B6 /* AutoLaunchManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoLaunchManager.swift; sourceTree = "<group>"; };
+		ACEACDABBBC2AB26890D4D80 /* CoordinateMapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateMapperTests.swift; sourceTree = "<group>"; };
+		BB2C3D4E5F60718293A4B5C7 /* WDALauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDALauncher.swift; sourceTree = "<group>"; };
+		C0A1B2C3D4E5F60718293000 /* ConnectionMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionMonitor.swift; sourceTree = "<group>"; };
+		MB1A2B3C4D5E6F7081920002 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		C74928C9057AF2DEE969206D /* MirrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MirrorView.swift; sourceTree = "<group>"; };
+		CC3D4E5F60718293A4B5C6D8 /* DeviceDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceDetector.swift; sourceTree = "<group>"; };
+		CC4E5F60718293A4B5C6D7F0 /* WDABuildCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDABuildCache.swift; sourceTree = "<group>"; };
+		D11DE9B19B062CC02C8F0BBA /* InputOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputOverlay.swift; sourceTree = "<group>"; };
+		D231CB81D8ECC4931632B371 /* MJPEGStreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MJPEGStreamManager.swift; sourceTree = "<group>"; };
+		D593BF67AFD3B320A88A7D07 /* WDAClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDAClientTests.swift; sourceTree = "<group>"; };
+		DD4E5F60718293A4B5C6D7E9 /* DependencyChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DependencyChecker.swift; sourceTree = "<group>"; };
+		DEDB417F6A237A8C4258FA3D /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessRunner.swift; sourceTree = "<group>"; };
+		E3F8FDA5E7448C5B90B6F775 /* USBVideoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = USBVideoView.swift; sourceTree = "<group>"; };
+		E8F01ADA710B7DB9F9F85610 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		EE5F60718293A4B5C6D7E900 /* BundledTools */ = {isa = PBXFileReference; lastKnownFileType = folder; name = BundledTools; path = SupportingFiles/BundledTools; sourceTree = "<group>"; };
+		F18706E8075E15D9A364F9AC /* AccessibilityTreeDiffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTreeDiffer.swift; sourceTree = "<group>"; };
+		F7F270E3AEDEAEB9D07AFC60 /* Specchio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Specchio.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9873F0F87E2B9F6F427CB1C /* InputTranslatorPinchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputTranslatorPinchTests.swift; sourceTree = "<group>"; };
+		SC1A2B3C4D5E6F7081920002 /* SetupChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupChecker.swift; sourceTree = "<group>"; };
+		SW1A2B3C4D5E6F7081920004 /* SetupWizardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizardView.swift; sourceTree = "<group>"; };
+		832F61315EA05EB29B057B1F /* OnboardingWelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingWelcomeView.swift; sourceTree = "<group>"; };
+		SPC001000000000000000002 /* SpecchioSharedControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecchioSharedControls.swift; sourceTree = "<group>"; };
+		GSW000000000000000002 /* SWGlowSweep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWGlowSweep.swift; sourceTree = "<group>"; };
+		PLS000000000000000002 /* SWPlasma.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWPlasma.swift; sourceTree = "<group>"; };
+		EE8BBF41FFCB4E61A85D213A /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
+		FU1A2B3C4D5E6F7081920002 /* ForceUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceUpdateChecker.swift; sourceTree = "<group>"; };
+		FV1A2B3C4D5E6F7081920004 /* ForceUpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceUpdateView.swift; sourceTree = "<group>"; };
+		KB1A2B3C4D5E6F7081920002 /* KeyboardExtSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardExtSocket.swift; sourceTree = "<group>"; };
+		KB1A2B3C4D5E6F7081920004 /* KeyboardExtLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardExtLauncher.swift; sourceTree = "<group>"; };
+		BT100001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClassicBluetoothRuntime.swift; sourceTree = "<group>"; };
+		BT100002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothHIDPanelController.swift; sourceTree = "<group>"; };
+		BT100003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = HIDServiceRecord.plist; sourceTree = "<group>"; };
+		BT100004B7A5E4D3C2B1A0904 /* KeyPadClone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyPadClone.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000001 /* AirPlayStreamHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayStreamHealth.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000002 /* AirPlayControlRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayControlRequest.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000003 /* AirPlayControlResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayControlResponse.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000004 /* AirPlayBonjourPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayBonjourPublisher.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000005 /* AirPlayPairingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayPairingSession.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000006 /* AirPlayFairPlaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayFairPlaySession.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000007 /* AirPlayMirrorPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayMirrorPacket.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000008 /* AirPlayH264FrameAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayH264FrameAdapter.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000009 /* AirPlayMirrorDataServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayMirrorDataServer.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000010 /* AirPlayControlServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayControlServer.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000011 /* AirPlayScreenStreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayScreenStreamManager.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000012 /* AirPlayTimingServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayTimingServer.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000013 /* AirPlayAudioSinkServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayAudioSinkServer.swift; sourceTree = "<group>"; };
+		AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayH264DumpWriter.swift; sourceTree = "<group>"; };
+		AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayProtocolTests.swift; sourceTree = "<group>"; };
+		FPLAYFR0000000000000001 /* libfairplay.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libfairplay.dylib; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0B79BE3CEF6E81BC7D6994E7 = {
+			isa = PBXGroup;
+			children = (
+				EE5F60718293A4B5C6D7E900 /* BundledTools */,
+				FPLAYGR0000000000000001 /* AirPlayFairPlay */,
+				RKMP0000000000000002 /* ReplayKitMediaProtocol.swift */,
+				F57D409182E6CC653B3E4926 /* Specchio */,
+				A710BBAF72BCA514E64C29B4 /* SpecchioTests */,
+				CC2CA7EF65C8C6A6245F2ECA /* Products */,
+				2683F8ED2F7AC20100E1847C /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		2683F8ED2F7AC20100E1847C /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				1C450C1D2E3F405162738000 /* AppIcon.icns */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		278D97612AC730DC68541D5D /* Input */ = {
+			isa = PBXGroup;
+			children = (
+				253758CB791266F6AC697BCC /* CoordinateMapper.swift */,
+				D11DE9B19B062CC02C8F0BBA /* InputOverlay.swift */,
+				1F87C7D8FBBC4364D4546F9C /* InputOverlayView.swift */,
+				53F054742116289B62FCBB68 /* InputTranslator.swift */,
+				0D92821B21504677DE8C9160 /* KeyboardMapper.swift */,
+				KB1A2B3C4D5E6F7081920002 /* KeyboardExtSocket.swift */,
+			);
+			path = Input;
+			sourceTree = "<group>";
+		};
+		2F632AF6D39BF40DD8D727F6 /* Utilities */ = {
+			isa = PBXGroup;
+				children = (
+					318CAB0CFFFADDCF4910DB44 /* ClipboardSync.swift */,
+					DD4E5F60718293A4B5C6D7E9 /* DependencyChecker.swift */,
+					FDIAG000000000000002 /* FrameDropDiagnostics.swift */,
+					997CF8235EDD08C8CFDD7311 /* FrameRateController.swift */,
+					A9DA3C2F5957A57287457E18 /* Logger.swift */,
+				DEDB417F6A237A8C4258FA3D /* ProcessRunner.swift */,
+				FU1A2B3C4D5E6F7081920002 /* ForceUpdateChecker.swift */,
+				844B0F42B0E04B64053180F0 /* ScreenshotSaver.swift */,
+				SC1A2B3C4D5E6F7081920002 /* SetupChecker.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
+		5B27EB474E56D2D5482C7CF5 /* Display */ = {
+			isa = PBXGroup;
+			children = (
+				8EDE61BC970B8AF4776EDE04 /* AccessibilityDisplay.swift */,
+				F18706E8075E15D9A364F9AC /* AccessibilityTreeDiffer.swift */,
+				05BA3DB09DA832EE1D74E26D /* AccessibilityTreeParser.swift */,
+				6034ED38C99BBD688B90875D /* DisplayProtocol.swift */,
+				A1B2C3D4E5F607182930A002 /* H264StreamManager.swift */,
+				IOSMGR0000000000000002 /* IOSScreenCaptureManager.swift */,
+				D231CB81D8ECC4931632B371 /* MJPEGStreamManager.swift */,
+				RKH264DEC000000000002 /* ReplayKitH264VideoDecoder.swift */,
+				RKAUDSTR00000000002 /* ReplayKitAudioStreamManager.swift */,
+				0E0FF4AD9FFD4849A1E7718C /* ReplayKitScreenStreamManager.swift */,
+				6644468E8E7B411A55E34A63 /* ScreenshotDisplay.swift */,
+				42327BFA53E2690DD3EAD6B6 /* USBVideoDisplay.swift */,
+				E3F8FDA5E7448C5B90B6F775 /* USBVideoView.swift */,
+			);
+			path = Display;
+			sourceTree = "<group>";
+		};
+		7C8DFE7F42777A54F414919E /* Device */ = {
+			isa = PBXGroup;
+			children = (
+				AA1B2C3D4E5F60718293A4B6 /* AutoLaunchManager.swift */,
+				12CA8D67AC5648FEA36FD9E5 /* ConnectionState.swift */,
+				C0A1B2C3D4E5F60718293000 /* ConnectionMonitor.swift */,
+				CC3D4E5F60718293A4B5C6D8 /* DeviceDetector.swift */,
+				6B4A98C37E94D277ED2136E0 /* DeviceManager.swift */,
+				IOSMON0000000000000002 /* IOSScreenCaptureDeviceMonitor.swift */,
+				KB1A2B3C4D5E6F7081920004 /* KeyboardExtLauncher.swift */,
+				A2EAFD298FA672845646D1C5 /* USBDeviceMonitor.swift */,
+				7F38F4B180C7EA1A227A2127 /* USBTunnel.swift */,
+				CC4E5F60718293A4B5C6D7F0 /* WDABuildCache.swift */,
+				BB2C3D4E5F60718293A4B5C7 /* WDALauncher.swift */,
+				521758964AEEDED50386B7E4 /* WiFiDeviceDiscovery.swift */,
+			);
+			path = Device;
+			sourceTree = "<group>";
+		};
+		8438597CCC7DCBB78A0189AC /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				0F346656B583832127362FF9 /* DevicePickerView.swift */,
+				3807D39E7E1241EE913CB04D /* EasyModeView.swift */,
+				FV1A2B3C4D5E6F7081920004 /* ForceUpdateView.swift */,
+				IVP001000000000000000002 /* InternalVideoPlayerView.swift */,
+				2368C4DBBB114377037F14B7 /* MainWindow.swift */,
+				MB1A2B3C4D5E6F7081920002 /* MenuBarView.swift */,
+				C74928C9057AF2DEE969206D /* MirrorView.swift */,
+				8D8EDBC3C93C4A21A2C5CCBE /* ModeSelectionView.swift */,
+				PU1B2C3D4E5F60718293A4B1 /* PremiumUpsellView.swift */,
+				1C4F9E0E8EEF4C89FB82A98E /* SettingsView.swift */,
+				SW1A2B3C4D5E6F7081920004 /* SetupWizardView.swift */,
+				832F61315EA05EB29B057B1F /* OnboardingWelcomeView.swift */,
+				SPC001000000000000000002 /* SpecchioSharedControls.swift */,
+				GSW000000000000000002 /* SWGlowSweep.swift */,
+				PLS000000000000000002 /* SWPlasma.swift */,
+				820B4E6C3FAA157466078261 /* StatusBarView.swift */,
+				EE8BBF41FFCB4E61A85D213A /* DiagnosticsView.swift */,
+				7D31B34BB46982146A203F97 /* ToolbarView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		BT500001B7A5E4D3C2B1A0900 /* Bluetooth */ = {
+			isa = PBXGroup;
+			children = (
+				BT100002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift */,
+				BT100001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift */,
+				BT100003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist */,
+				BT100004B7A5E4D3C2B1A0904 /* KeyPadClone.swift */,
+			);
+			path = Bluetooth;
+			sourceTree = "<group>";
+		};
+		AIRPGR00000000000000001 /* AirPlay */ = {
+			isa = PBXGroup;
+			children = (
+				AIRPFR00000000000000013 /* AirPlayAudioSinkServer.swift */,
+				AIRPFR00000000000000004 /* AirPlayBonjourPublisher.swift */,
+				AIRPFR00000000000000002 /* AirPlayControlRequest.swift */,
+				AIRPFR00000000000000003 /* AirPlayControlResponse.swift */,
+				AIRPFR00000000000000010 /* AirPlayControlServer.swift */,
+				AIRPFR00000000000000006 /* AirPlayFairPlaySession.swift */,
+				AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */,
+				AIRPFR00000000000000008 /* AirPlayH264FrameAdapter.swift */,
+				AIRPFR00000000000000009 /* AirPlayMirrorDataServer.swift */,
+				AIRPFR00000000000000007 /* AirPlayMirrorPacket.swift */,
+				AIRPFR00000000000000005 /* AirPlayPairingSession.swift */,
+				AIRPFR00000000000000011 /* AirPlayScreenStreamManager.swift */,
+				AIRPFR00000000000000001 /* AirPlayStreamHealth.swift */,
+				AIRPFR00000000000000012 /* AirPlayTimingServer.swift */,
+			);
+			path = AirPlay;
+			sourceTree = "<group>";
+		};
+		FPLAYGR0000000000000001 /* AirPlayFairPlay */ = {
+			isa = PBXGroup;
+			children = (
+				FPLAYFR0000000000000001 /* libfairplay.dylib */,
+			);
+			path = SupportingFiles/AirPlayFairPlay;
+			sourceTree = "<group>";
+		};
+		A710BBAF72BCA514E64C29B4 /* SpecchioTests */ = {
+			isa = PBXGroup;
+			children = (
+				38CF2F3CB01618D584233183 /* AccessibilityTreeParserTests.swift */,
+				AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */,
+				ACEACDABBBC2AB26890D4D80 /* CoordinateMapperTests.swift */,
+				F9873F0F87E2B9F6F427CB1C /* InputTranslatorPinchTests.swift */,
+				RKTEST00000000000002 /* ReplayKitMediaProtocolTests.swift */,
+				D593BF67AFD3B320A88A7D07 /* WDAClientTests.swift */,
+			);
+			path = SpecchioTests;
+			sourceTree = "<group>";
+		};
+		B9AD6977E9672F803B01FC10 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				7501681F24DBF17AC0DE2B95 /* AppState.swift */,
+				LM1B2C3D4E5F60718293A4B7 /* LicenseManager.swift */,
+				PC1A2B3C4D5E6F7081920002 /* PasscodeManager.swift */,
+				197F749F63673F6E86F8B26B /* SpecchioApp.swift */,
+				E8F01ADA710B7DB9F9F85610 /* Settings.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C591E507E33018336A353545 /* WDA */ = {
+			isa = PBXGroup;
+			children = (
+				3A43EAC5F75D43F4A85C5973 /* WDAClient.swift */,
+				WDAIS0000000000000000002 /* WDAInputSocket.swift */,
+				0086062E397379233B5F7458 /* WDATypes.swift */,
+			);
+			path = WDA;
+			sourceTree = "<group>";
+		};
+		CC2CA7EF65C8C6A6245F2ECA /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F7F270E3AEDEAEB9D07AFC60 /* Specchio.app */,
+				70F2988C7FE80C4269900005 /* SpecchioTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		F57D409182E6CC653B3E4926 /* Specchio */ = {
+			isa = PBXGroup;
+			children = (
+				AIRPGR00000000000000001 /* AirPlay */,
+				B9AD6977E9672F803B01FC10 /* App */,
+				BT500001B7A5E4D3C2B1A0900 /* Bluetooth */,
+				7C8DFE7F42777A54F414919E /* Device */,
+				5B27EB474E56D2D5482C7CF5 /* Display */,
+				278D97612AC730DC68541D5D /* Input */,
+				2F632AF6D39BF40DD8D727F6 /* Utilities */,
+				8438597CCC7DCBB78A0189AC /* Views */,
+				C591E507E33018336A353545 /* WDA */,
+				PAYWALLASSETREF0001 /* Assets.xcassets */,
+			);
+			path = Specchio;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A1B2C3D4E5F6071829304050 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		46F0ED39BC30F94FD501D3EC /* Specchio */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D6252018132E45442F1D1686 /* Build configuration list for PBXNativeTarget "Specchio" */;
+			buildPhases = (
+				1C450A1B2C3D4E5F60718200 /* Resources */,
+				2683F8EE2F7B194200E1847C /* Copy WebDriverAgent */,
+				KB1A2B3C4D5E6F7081920010 /* Copy SpecchioKeyboard */,
+				6D22D2E651BA0370CB255C20 /* Sources */,
+				A1B2C3D4E5F6071829304050 /* Frameworks */,
+				FPLAYCP0000000000000001 /* Copy AirPlay FairPlay Provider */,
+				FF718293A4B5C6D7E8F90011 /* Copy BundledTools */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Specchio;
+			packageProductDependencies = (
+				2683F8F02F7C2BD000E1847C /* Sparkle */,
+				BIGINTPROD00000000000001 /* BigInt */,
+			);
+			productName = Specchio;
+			productReference = F7F270E3AEDEAEB9D07AFC60 /* Specchio.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E833B3B89F16181E699A6939 /* SpecchioTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3A436049711DAF2D905751E /* Build configuration list for PBXNativeTarget "SpecchioTests" */;
+			buildPhases = (
+				83AA6B5C96A8F6FEB98A6A16 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				668F1591F4F36FB5EEC7C78A /* PBXTargetDependency */,
+			);
+			name = SpecchioTests;
+			packageProductDependencies = (
+				BIGINTPRODTEST0000000001 /* BigInt */,
+			);
+			productName = SpecchioTests;
+			productReference = 70F2988C7FE80C4269900005 /* SpecchioTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		755C622C31892C73E7F33E3E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = 9E511CCDAFF5EB0E110F6908 /* Build configuration list for PBXProject "Specchio" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 0B79BE3CEF6E81BC7D6994E7;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2683F8EF2F7C2BCE00E1847C /* XCRemoteSwiftPackageReference "Sparkle" */,
+				BIGINTREF000000000000001 /* XCRemoteSwiftPackageReference "BigInt" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = CC2CA7EF65C8C6A6245F2ECA /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				46F0ED39BC30F94FD501D3EC /* Specchio */,
+				E833B3B89F16181E699A6939 /* SpecchioTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1C450A1B2C3D4E5F60718200 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				PAYWALLASSETBUILD001 /* Assets.xcassets in Resources */,
+				1C450B1C2D3E4F5061728300 /* AppIcon.icns in Resources */,
+				BT000003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		2683F8EE2F7B194200E1847C /* Copy WebDriverAgent */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy WebDriverAgent";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "rsync -a --exclude '.git' --exclude 'node_modules' --exclude 'WebDriverAgentTests' \"${SRCROOT}/WebDriverAgent\" \"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/\"\n";
+		};
+		KB1A2B3C4D5E6F7081920010 /* Copy SpecchioKeyboard */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Copy SpecchioKeyboard";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "rsync -a --exclude '.git' --exclude 'DerivedData' --exclude 'build' \"${SRCROOT}/SpecchioKeyboard\" \"${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		6D22D2E651BA0370CB255C20 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA1B2C3D4E5F60718293A4B5 /* AutoLaunchManager.swift in Sources */,
+				CC3D4E5F60718293A4B5C6D7 /* DeviceDetector.swift in Sources */,
+				DD4E5F60718293A4B5C6D7E8 /* DependencyChecker.swift in Sources */,
+				CC4E5F60718293A4B5C6D7F1 /* WDABuildCache.swift in Sources */,
+				BB2C3D4E5F60718293A4B5C6 /* WDALauncher.swift in Sources */,
+				D499706AF5ADE60F3ECCDF28 /* AccessibilityDisplay.swift in Sources */,
+				3EAB925F9902E0BA12287C58 /* AccessibilityTreeDiffer.swift in Sources */,
+				C57D1F9DDA837EB30AF0DCA4 /* AccessibilityTreeParser.swift in Sources */,
+				87E19FA0C30F80B6BB15481D /* AppState.swift in Sources */,
+				AIRPBF00000000000000004 /* AirPlayBonjourPublisher.swift in Sources */,
+				AIRPBF00000000000000002 /* AirPlayControlRequest.swift in Sources */,
+				AIRPBF00000000000000003 /* AirPlayControlResponse.swift in Sources */,
+				AIRPBF00000000000000010 /* AirPlayControlServer.swift in Sources */,
+				AIRPBF00000000000000006 /* AirPlayFairPlaySession.swift in Sources */,
+				AIRPBF00000000000000008 /* AirPlayH264FrameAdapter.swift in Sources */,
+				AIRPBF00000000000000009 /* AirPlayMirrorDataServer.swift in Sources */,
+				AIRPBF00000000000000007 /* AirPlayMirrorPacket.swift in Sources */,
+				AIRPBF00000000000000005 /* AirPlayPairingSession.swift in Sources */,
+				AIRPBF00000000000000011 /* AirPlayScreenStreamManager.swift in Sources */,
+				AIRPBF00000000000000001 /* AirPlayStreamHealth.swift in Sources */,
+				AIRPBF00000000000000012 /* AirPlayTimingServer.swift in Sources */,
+				AIRPBF00000000000000013 /* AirPlayAudioSinkServer.swift in Sources */,
+				AIRPBF00000000000000014 /* AirPlayH264DumpWriter.swift in Sources */,
+				BT000002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift in Sources */,
+				72F27B071798027076CC5FD0 /* ClipboardSync.swift in Sources */,
+				BT000001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift in Sources */,
+				BT000004B7A5E4D3C2B1A0904 /* KeyPadClone.swift in Sources */,
+				E302F1325EEA3564BB619DCC /* ConnectionState.swift in Sources */,
+				C0B1C2D3E4F5061728394A00 /* ConnectionMonitor.swift in Sources */,
+				34A554A64429F5E066E0B99D /* CoordinateMapper.swift in Sources */,
+					FA8A86FF32CE97C67C564D71 /* DeviceManager.swift in Sources */,
+					F25BCD1340540ADCA0E73AFB /* DevicePickerView.swift in Sources */,
+					BDA369CE0E919925693D0389 /* DisplayProtocol.swift in Sources */,
+					FDIAG000000000000001 /* FrameDropDiagnostics.swift in Sources */,
+					FU1A2B3C4D5E6F7081920001 /* ForceUpdateChecker.swift in Sources */,
+				FV1A2B3C4D5E6F7081920003 /* ForceUpdateView.swift in Sources */,
+				0E6DEE85B7AAAC7D6806CB12 /* FrameRateController.swift in Sources */,
+				A1B2C3D4E5F607182930A001 /* H264StreamManager.swift in Sources */,
+				RKH264DEC000000000001 /* ReplayKitH264VideoDecoder.swift in Sources */,
+				RKAUDSTR00000000001 /* ReplayKitAudioStreamManager.swift in Sources */,
+				526C5E7AAE1F421CABD289F2 /* EasyModeView.swift in Sources */,
+				IOSMGR0000000000000001 /* IOSScreenCaptureManager.swift in Sources */,
+				IOSMON0000000000000001 /* IOSScreenCaptureDeviceMonitor.swift in Sources */,
+				4E3F328F83C1EC46B6DB421C /* InputOverlay.swift in Sources */,
+				3DC1A0AD20EFD4E2013EF082 /* InputOverlayView.swift in Sources */,
+				IVP001000000000000000001 /* InternalVideoPlayerView.swift in Sources */,
+				70E7B01D7886AFBCBFBFE741 /* InputTranslator.swift in Sources */,
+				B12FA8786F0214F423E186A6 /* KeyboardMapper.swift in Sources */,
+				1A8E38DE3C396EA4463741C7 /* Logger.swift in Sources */,
+				941EE13E3F5ED68704A5E50B /* MJPEGStreamManager.swift in Sources */,
+				LM1B2C3D4E5F60718293A4B8 /* LicenseManager.swift in Sources */,
+				PC1A2B3C4D5E6F7081920001 /* PasscodeManager.swift in Sources */,
+				9D4D0B6B212ED8ACD22424C2 /* MainWindow.swift in Sources */,
+				PU1B2C3D4E5F60718293A4B0 /* PremiumUpsellView.swift in Sources */,
+				MB1A2B3C4D5E6F7081920001 /* MenuBarView.swift in Sources */,
+				15363FEFCB0264C3FAE8E937 /* MirrorView.swift in Sources */,
+				9F68F51AE0FA4F3392C73997 /* ModeSelectionView.swift in Sources */,
+				0187372A5BF5F3C2AF7B3509 /* SpecchioApp.swift in Sources */,
+				8799484D162F3A0327346996 /* ProcessRunner.swift in Sources */,
+				CD1B96E2C2BB242789697935 /* ScreenshotDisplay.swift in Sources */,
+				FCEDCA71CA4B376E4BDA5750 /* ScreenshotSaver.swift in Sources */,
+				SC1A2B3C4D5E6F7081920001 /* SetupChecker.swift in Sources */,
+				SW1A2B3C4D5E6F7081920003 /* SetupWizardView.swift in Sources */,
+				0EE0729273835ECAB67187FB /* OnboardingWelcomeView.swift in Sources */,
+				SPC001000000000000000001 /* SpecchioSharedControls.swift in Sources */,
+				GSW000000000000000001 /* SWGlowSweep.swift in Sources */,
+				PLS000000000000000001 /* SWPlasma.swift in Sources */,
+				7C74993C970D4620BCDD1520 /* DiagnosticsView.swift in Sources */,
+				64F9A902FF1A429603D2BDBE /* Settings.swift in Sources */,
+				0C1A455AE328ECE857A22D2A /* SettingsView.swift in Sources */,
+				3C3E26A2F1F341AA9D37AF96 /* ReplayKitScreenStreamManager.swift in Sources */,
+				RKMP0000000000000001 /* ReplayKitMediaProtocol.swift in Sources */,
+				E1DF29105973CFA8FB897443 /* StatusBarView.swift in Sources */,
+				9E4D3E2C8BF8F2E7FE781D1D /* ToolbarView.swift in Sources */,
+				2D6AF256408B3710977AF0F5 /* USBDeviceMonitor.swift in Sources */,
+				51FEAF7124213BC6E0A049EA /* USBTunnel.swift in Sources */,
+				18331EE26D4E0F8DDB4A1D5A /* USBVideoDisplay.swift in Sources */,
+				01D6BB76CA731AFDA8F4C765 /* USBVideoView.swift in Sources */,
+				72A082B8182BCA82926F308E /* WDAClient.swift in Sources */,
+				WDAIS0000000000000000001 /* WDAInputSocket.swift in Sources */,
+				0C5C7C6961698EB1C6866C61 /* WDATypes.swift in Sources */,
+				BD0FC4F2662850EF83E4E1E3 /* WiFiDeviceDiscovery.swift in Sources */,
+				KB1A2B3C4D5E6F7081920001 /* KeyboardExtSocket.swift in Sources */,
+				KB1A2B3C4D5E6F7081920003 /* KeyboardExtLauncher.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		83AA6B5C96A8F6FEB98A6A16 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A7785D56156E522BECFF2244 /* AccessibilityTreeParserTests.swift in Sources */,
+				AIRPTB00000000000000001 /* AirPlayProtocolTests.swift in Sources */,
+				2A596AB9F8B4C11B46FC0BDD /* CoordinateMapperTests.swift in Sources */,
+				23078699FEE0F2F39CBC1BA1 /* InputTranslatorPinchTests.swift in Sources */,
+				RKTEST00000000000001 /* ReplayKitMediaProtocolTests.swift in Sources */,
+				B11B1E02391F4033F91FC1A5 /* WDAClientTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		668F1591F4F36FB5EEC7C78A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 46F0ED39BC30F94FD501D3EC /* Specchio */;
+			targetProxy = BAD0EFF7744C45CC617E2811 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		13FB6CF97A92E355504722BB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Specchio.app/Contents/MacOS/Specchio";
+			};
+			name = Release;
+		};
+		44969896C9C46DF7AD3A1AD2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.SpecchioTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Specchio.app/Contents/MacOS/Specchio";
+			};
+			name = Debug;
+		};
+		5815E5BE825F6DBE90B37EEB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		86EF42DD58B62B68464B58F9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		93191E11A1CF8D6B717A8B15 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SupportingFiles/Specchio.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2026060701;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupportingFiles/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 2026060701;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		AB67C0F10C54FAB100FC4BEE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SupportingFiles/Specchio.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 2026060701;
+				DEVELOPMENT_TEAM = 5297SX54T2;
+				ENABLE_DEBUG_DYLIB = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SupportingFiles/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 2026060701;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9E511CCDAFF5EB0E110F6908 /* Build configuration list for PBXProject "Specchio" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5815E5BE825F6DBE90B37EEB /* Debug */,
+				86EF42DD58B62B68464B58F9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D6252018132E45442F1D1686 /* Build configuration list for PBXNativeTarget "Specchio" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB67C0F10C54FAB100FC4BEE /* Debug */,
+				93191E11A1CF8D6B717A8B15 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F3A436049711DAF2D905751E /* Build configuration list for PBXNativeTarget "SpecchioTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				44969896C9C46DF7AD3A1AD2 /* Debug */,
+				13FB6CF97A92E355504722BB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2683F8EF2F7C2BCE00E1847C /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.9.1;
+			};
+		};
+		BIGINTREF000000000000001 /* XCRemoteSwiftPackageReference "BigInt" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/attaswift/BigInt";
+			requirement = {
+				kind = exactVersion;
+				version = 5.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2683F8F02F7C2BD000E1847C /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2683F8EF2F7C2BCE00E1847C /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		BIGINTPROD00000000000001 /* BigInt */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BIGINTREF000000000000001 /* XCRemoteSwiftPackageReference "BigInt" */;
+			productName = BigInt;
+		};
+		BIGINTPRODTEST0000000001 /* BigInt */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BIGINTREF000000000000001 /* XCRemoteSwiftPackageReference "BigInt" */;
+			productName = BigInt;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 755C622C31892C73E7F33E3E /* Project object */;
+}

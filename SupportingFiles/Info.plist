@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Specchio</string>
+	<key>CFBundleDisplayName</key>
+	<string>Specchio</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Specchio uses your camera interface to capture the iPhone screen over USB via CoreMediaIO.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Specchio uses Bluetooth to connect keyboard and mouse input to your iPhone in Easy mode.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Specchio connects to your iPhone for screen mirroring, AirPlay receiver discovery and streaming, and input control.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+		<string>_specchio._tcp</string>
+		<string>_specchio-replaykit._tcp</string>
+		<string>_specchio-replaykit-audio._tcp</string>
+		<string>_airplay._tcp</string>
+		<string>_raop._tcp</string>
+	</array>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>SUFeedURL</key>
+	<string>https://api.amore.computer/v1/apps/com.alexintosh.Specchio/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>jfsVbdUI2UnQvCEciCz1ZPZ+cZRUAkAIi8UpwYw1TVM=</string>
+	<key>SpecchioMinimumVersionURL</key>
+	<string>https://pub-97ba386621da499e92282258f46d7e74.r2.dev/minimum-version.json</string>
+</dict>
+</plist>
