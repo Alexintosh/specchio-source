@@ -4,6 +4,7 @@ import AppKit
 struct SpecchioMirrorLogo: View {
     let mouseLocation: CGPoint
     var parentSize: CGSize = CGSize(width: 390, height: 844)
+    var size: CGFloat = 128
 
     private var rotation: (x: Double, y: Double) {
         guard mouseLocation != .zero, parentSize.width > 0 else {
@@ -19,8 +20,10 @@ struct SpecchioMirrorLogo: View {
     }
 
     var body: some View {
-        Text("🪞")
-            .font(.system(size: 128))
+        Image("SpecchioLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
             .rotation3DEffect(
                 .degrees(rotation.x),
                 axis: (x: 1, y: 0, z: 0),
@@ -34,7 +37,7 @@ struct SpecchioMirrorLogo: View {
             .animation(.easeOut(duration: 0.15), value: mouseLocation.x)
             .animation(.easeOut(duration: 0.15), value: mouseLocation.y)
             .onAppear {
-                SpecchioLogger.easyMode.info("[SpecchioMirrorLogo] appeared emoji=mirror fontSize=128 parentWidth=\(parentSize.width) parentHeight=\(parentSize.height)")
+                SpecchioLogger.easyMode.info("[SpecchioMirrorLogo] appeared asset=SpecchioLogo width=\(size) height=\(size) parentWidth=\(parentSize.width) parentHeight=\(parentSize.height)")
             }
     }
 }

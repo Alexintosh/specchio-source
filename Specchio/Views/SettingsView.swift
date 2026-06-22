@@ -8,6 +8,7 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
     case videoMirroring
     case toolbar
     case licenceUpdates
+    case experiments
     case developers
 
     var id: Self { self }
@@ -26,6 +27,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
             return "Toolbar"
         case .licenceUpdates:
             return "Licence & Updates"
+        case .experiments:
+            return "Experiments"
         case .developers:
             return "Developers"
         }
@@ -45,6 +48,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
             return "Easy toolbar order and visible controls"
         case .licenceUpdates:
             return "Premium status, updates, and app information"
+        case .experiments:
+            return "Try experimental interaction features"
         case .developers:
             return "Experimental controls and WebDriverAgent tools"
         }
@@ -64,6 +69,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
             return "rectangle.topthird.inset.filled"
         case .licenceUpdates:
             return "checkmark.seal"
+        case .experiments:
+            return "testtube.2"
         case .developers:
             return "hammer"
         }
@@ -83,6 +90,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
             return "toolbar"
         case .licenceUpdates:
             return "licence-updates"
+        case .experiments:
+            return "experiments"
         case .developers:
             return "developers"
         }
@@ -124,6 +133,21 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        settingsLayout
+            .frame(
+                minWidth: SettingsViewMetrics.windowMinimumWidth,
+                idealWidth: SettingsViewMetrics.windowIdealWidth,
+                minHeight: SettingsViewMetrics.windowMinimumHeight,
+                idealHeight: SettingsViewMetrics.windowIdealHeight
+            )
+            .background(SettingsWindowConfigurator(chromeTopInset: $windowChromeTopInset))
+            .sheet(isPresented: $showPremiumSheet) {
+                PremiumUpsellView()
+            }
+            .background(settingsChangeObservers)
+    }
+
+    private var settingsLayout: some View {
         HStack(spacing: 0) {
             SettingsSidebar(
                 selectedPanel: $selectedPanel,
@@ -151,31 +175,21 @@ struct SettingsView: View {
                 SpecchioLogger.ui.info("[SettingsDetail] appeared selected=\(selectedPanel.logName, privacy: .public)")
             }
         }
-        .frame(
-            minWidth: SettingsViewMetrics.windowMinimumWidth,
-            idealWidth: SettingsViewMetrics.windowIdealWidth,
-            minHeight: SettingsViewMetrics.windowMinimumHeight,
-            idealHeight: SettingsViewMetrics.windowIdealHeight
-        )
-        .background(SettingsWindowConfigurator(chromeTopInset: $windowChromeTopInset))
-        .sheet(isPresented: $showPremiumSheet) {
-            PremiumUpsellView()
+    }
+
+    private var settingsChangeObservers: some View {
+        Group {
+            settingsLifecycleObserver
+            easyInputSettingsObserver
+            easyToolbarSettingsObserver
+            easyVideoSettingsObserver
         }
+    }
+
+    private var settingsLifecycleObserver: some View {
+        Color.clear
         .onAppear {
-            SpecchioLogger.ui.info("[Settings] appeared layout=fixed-sidebar selectedPanel=\(self.selectedPanel.logName, privacy: .public)")
-            SpecchioLogger.ui.info("[Settings] alwaysOnTop=\(self.settings.alwaysOnTop)")
-            SpecchioLogger.ui.info("[Settings] bluetoothAutoConnect=\(self.settings.bluetoothAutoConnect)")
-            sanitizeAirPlayQualityPreference(source: "settings appeared")
-            SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
-            SpecchioLogger.easyMode.info("[Settings] easyToolbarCommandOrder legacy=\(self.settings.easyToolbarCommandOrder, privacy: .public) visible=\(self.settings.easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(self.settings.easyToolbarOverflowCommandOrder, privacy: .public)")
-            SpecchioLogger.easyMode.info("[Settings] easyShowFPSCounter=\(self.settings.easyShowFPSCounter)")
-            SpecchioLogger.easyMode.info("[Settings] easyReplayKitH264TargetFPS=\(self.settings.easyReplayKitH264TargetFPS)")
-            let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: self.settings.easyAirPlayQuality)
-            SpecchioLogger.easyMode.info("[Settings] easyAirPlayQuality=\(self.settings.easyAirPlayQuality, privacy: .public) display=\(airPlayPixels.width)x\(airPlayPixels.height)")
-            SpecchioLogger.easyMode.info("[Settings] easyUSBTargetFPS=\(self.settings.easyUSBTargetFPS)")
-            Task { @MainActor in
-                await licenseManager.validate()
-            }
+            handleSettingsAppear()
         }
         .onChange(of: selectedPanel) { oldValue, newValue in
             SpecchioLogger.ui.info("[Settings] selectedPanel changed from=\(oldValue.logName, privacy: .public) to=\(newValue.logName, privacy: .public)")
@@ -186,6 +200,10 @@ struct SettingsView: View {
         .onChange(of: settings.bluetoothAutoConnect) { _, newValue in
             SpecchioLogger.ui.info("[Settings] Bluetooth auto-connect changed enabled=\(newValue)")
         }
+    }
+
+    private var easyInputSettingsObserver: some View {
+        Color.clear
         .onChange(of: settings.easyMouseClutchMode) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy clutch mode changed enabled=\(newValue)")
         }
@@ -201,6 +219,34 @@ struct SettingsView: View {
         .onChange(of: settings.easyPointerSpikeTransportVariant) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy pointer spike transport changed variant=\(newValue)")
         }
+        .onChange(of: settings.easyTrackpadSwipeToDragEnabled) { _, newValue in
+            SpecchioLogger.easyMode.info("[Settings] Easy trackpad swipe to drag experiment changed enabled=\(newValue)")
+            FrameDropDiagnostics.shared.recordLifecycle(
+                source: "easyTrackpadGesture",
+                event: "settingChanged",
+                reason: "settings-toggle",
+                details: ["enabled": String(newValue)]
+            )
+        }
+        .onChange(of: settings.easyTrackpadSwipeToDragMode) { _, newValue in
+            let sanitizedValue = AppSettings.EasyTrackpadSwipeToDragMode.sanitized(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy trackpad swipe mode sanitized requested=\(newValue, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+                settings.easyTrackpadSwipeToDragMode = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy trackpad swipe mode changed mode=\(sanitizedValue, privacy: .public)")
+            FrameDropDiagnostics.shared.recordLifecycle(
+                source: "easyTrackpadGesture",
+                event: "settingChanged",
+                reason: "settings-mode-picker",
+                details: ["mode": sanitizedValue]
+            )
+        }
+    }
+
+    private var easyToolbarSettingsObserver: some View {
+        Color.clear
         .onChange(of: settings.easyToolbarCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy toolbar legacy order changed value=\(newValue, privacy: .public)")
         }
@@ -210,9 +256,16 @@ struct SettingsView: View {
         .onChange(of: settings.easyToolbarOverflowCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy toolbar overflow order changed value=\(newValue, privacy: .public)")
         }
+        .onChange(of: settings.easyToolbarAlwaysVisible) { _, newValue in
+            SpecchioLogger.easyMode.info("[Settings] Easy toolbar always visible changed enabled=\(newValue)")
+        }
         .onChange(of: settings.easyShowFPSCounter) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy status bar FPS counter changed enabled=\(newValue)")
         }
+    }
+
+    private var easyVideoSettingsObserver: some View {
+        Color.clear
         .onChange(of: settings.easyReplayKitH264TargetFPS) { _, newValue in
             let sanitizedValue = AppSettings.sanitizedEasyReplayKitH264TargetFPS(newValue)
             if sanitizedValue != newValue {
@@ -243,6 +296,26 @@ struct SettingsView: View {
         }
     }
 
+    private func handleSettingsAppear() {
+        SpecchioLogger.ui.info("[Settings] appeared layout=fixed-sidebar selectedPanel=\(self.selectedPanel.logName, privacy: .public)")
+        SpecchioLogger.ui.info("[Settings] alwaysOnTop=\(self.settings.alwaysOnTop)")
+        SpecchioLogger.ui.info("[Settings] bluetoothAutoConnect=\(self.settings.bluetoothAutoConnect)")
+        SpecchioLogger.easyMode.info("[Settings] easyToolbarAlwaysVisible=\(self.settings.easyToolbarAlwaysVisible)")
+        SpecchioLogger.easyMode.info("[Settings] easyAirPlayConnectionTutorialHidden=\(self.settings.easyAirPlayConnectionTutorialHidden)")
+        sanitizeAirPlayQualityPreference(source: "settings appeared")
+        SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
+        SpecchioLogger.easyMode.info("[Settings] easyTrackpadSwipeToDragEnabled=\(self.settings.easyTrackpadSwipeToDragEnabled) mode=\(self.settings.easyTrackpadSwipeToDragMode, privacy: .public)")
+        SpecchioLogger.easyMode.info("[Settings] easyToolbarCommandOrder legacy=\(self.settings.easyToolbarCommandOrder, privacy: .public) visible=\(self.settings.easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(self.settings.easyToolbarOverflowCommandOrder, privacy: .public)")
+        SpecchioLogger.easyMode.info("[Settings] easyShowFPSCounter=\(self.settings.easyShowFPSCounter)")
+        SpecchioLogger.easyMode.info("[Settings] easyReplayKitH264TargetFPS=\(self.settings.easyReplayKitH264TargetFPS)")
+        let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: self.settings.easyAirPlayQuality)
+        SpecchioLogger.easyMode.info("[Settings] easyAirPlayQuality=\(self.settings.easyAirPlayQuality, privacy: .public) display=\(airPlayPixels.width)x\(airPlayPixels.height)")
+        SpecchioLogger.easyMode.info("[Settings] easyUSBTargetFPS=\(self.settings.easyUSBTargetFPS)")
+        Task { @MainActor in
+            await licenseManager.validate()
+        }
+    }
+
     @ViewBuilder
     private var selectedPanelContent: some View {
         switch selectedPanel {
@@ -251,7 +324,7 @@ struct SettingsView: View {
                 generalSection
             }
             .onAppear {
-                SpecchioLogger.ui.info("[SettingsDetail] content branch=general alwaysOnTop=\(settings.alwaysOnTop)")
+                SpecchioLogger.ui.info("[SettingsDetail] content branch=general alwaysOnTop=\(settings.alwaysOnTop) easyToolbarAlwaysVisible=\(settings.easyToolbarAlwaysVisible) airPlayTutorialHidden=\(settings.easyAirPlayConnectionTutorialHidden)")
             }
 
         case .connection:
@@ -299,6 +372,14 @@ struct SettingsView: View {
                 SpecchioLogger.ui.info("[SettingsDetail] content branch=licence-updates")
             }
 
+        case .experiments:
+            Group {
+                experimentsSection
+            }
+            .onAppear {
+                SpecchioLogger.ui.info("[SettingsDetail] content branch=experiments trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public)")
+            }
+
         case .developers:
             Group {
                 developerOptionsGateSection
@@ -313,11 +394,27 @@ struct SettingsView: View {
     }
 
     private var generalSection: some View {
-        Section("Window") {
-            Toggle("Always on Top", isOn: $settings.alwaysOnTop)
-        }
-        .onAppear {
-            SpecchioLogger.ui.info("[SettingsGeneral] window section visible alwaysOnTop=\(settings.alwaysOnTop)")
+        Group {
+            Section("Window") {
+                Toggle("Always on Top", isOn: $settings.alwaysOnTop)
+                Toggle("Toolbar Always Visible", isOn: $settings.easyToolbarAlwaysVisible)
+            }
+            .onAppear {
+                SpecchioLogger.ui.info("[SettingsGeneral] window section visible alwaysOnTop=\(settings.alwaysOnTop) easyToolbarAlwaysVisible=\(settings.easyToolbarAlwaysVisible)")
+            }
+
+            Section("Tutorials") {
+                Button("Reset Tutorial Preferences") {
+                    settings.easyAirPlayConnectionTutorialHidden = AppSettings.Defaults.easyAirPlayConnectionTutorialHidden
+                    SpecchioLogger.easyMode.info("[SettingsTutorials] reset requested airPlayTutorialHidden=\(settings.easyAirPlayConnectionTutorialHidden)")
+                }
+                Text("Shows hidden tutorial prompts again, including the AirPlay connection guide.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .onAppear {
+                SpecchioLogger.ui.info("[SettingsTutorials] section visible airPlayTutorialHidden=\(settings.easyAirPlayConnectionTutorialHidden)")
+            }
         }
     }
 
@@ -418,6 +515,31 @@ struct SettingsView: View {
             Text("Shows the live ReplayKit frame rate in the bottom status bar.")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        }
+    }
+
+    private var experimentsSection: some View {
+        Section("Input Experiments") {
+            Toggle("Trackpad Swipe Controls iPhone", isOn: $settings.easyTrackpadSwipeToDragEnabled)
+            Text("When enabled, horizontal two-finger trackpad swipes over the Easy video surface are converted into iPhone mouse drags.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Picker("Swipe Delivery", selection: $settings.easyTrackpadSwipeToDragMode) {
+                ForEach(AppSettings.EasyTrackpadSwipeToDragMode.allowedValues, id: \.self) { mode in
+                    Text(AppSettings.EasyTrackpadSwipeToDragMode.label(for: mode)).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!settings.easyTrackpadSwipeToDragEnabled)
+            Text("Live sends the drag while the trackpad gesture is moving. Delayed waits until the gesture ends, then sends one anchored swipe.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            Text("Bluetooth mouse control and AssistiveTouch must already be configured on the iPhone.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .onAppear {
+            SpecchioLogger.easyMode.info("[SettingsExperiments] section visible trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public)")
         }
     }
 

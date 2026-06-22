@@ -1,4 +1,5 @@
 import Foundation
+import SystemConfiguration
 
 private let airPlayBonjourLog = SpecchioLogger.airPlay
 
@@ -58,19 +59,69 @@ final class AirPlayBonjourPublisher: NSObject, NetServiceDelegate {
         }
 
         static func make(
-            serviceName: String = "Specchio",
+            serviceName: String? = nil,
             controlPort: UInt16,
             publicKeyHex: String,
             supportsScreenMultiCodec: Bool = false
         ) -> Configuration {
-            Configuration(
-                serviceName: serviceName,
+            let resolvedServiceName: String
+            if let serviceName {
+                let sanitizedExplicitServiceName = sanitizedServiceName(serviceName)
+                if sanitizedExplicitServiceName.isEmpty {
+                    resolvedServiceName = defaultServiceName()
+                    airPlayBonjourLog.warning("[AirPlayBonjourName] explicit service name branch=EMPTY_USING_DEFAULT resolved=\(resolvedServiceName, privacy: .public)")
+                } else {
+                    resolvedServiceName = sanitizedExplicitServiceName
+                    airPlayBonjourLog.info("[AirPlayBonjourName] explicit service name branch=USING_EXPLICIT resolved=\(resolvedServiceName, privacy: .public)")
+                }
+            } else {
+                resolvedServiceName = defaultServiceName()
+            }
+
+            return Configuration(
+                serviceName: resolvedServiceName,
                 controlPort: controlPort,
                 publicKeyHex: publicKeyHex,
                 persistentIdentifier: Self.persistentUUIDString(),
                 deviceID: Self.persistentDeviceID(),
                 supportsScreenMultiCodec: supportsScreenMultiCodec
             )
+        }
+
+        private static func defaultServiceName() -> String {
+            let appName = "Specchio"
+            guard let computerName = localComputerName() else {
+                airPlayBonjourLog.warning("[AirPlayBonjourName] default service name branch=FALLBACK_APP_NAME resolved=\(appName, privacy: .public)")
+                return appName
+            }
+
+            let serviceName = "\(appName) - \(computerName)"
+            airPlayBonjourLog.info("[AirPlayBonjourName] default service name branch=COMPUTER_NAME computerName=\(computerName, privacy: .public) resolved=\(serviceName, privacy: .public)")
+            return serviceName
+        }
+
+        private static func localComputerName() -> String? {
+            var encoding: CFStringEncoding = 0
+            guard let rawName = SCDynamicStoreCopyComputerName(nil, &encoding) as String? else {
+                airPlayBonjourLog.warning("[AirPlayBonjourName] computer name branch=MISSING")
+                return nil
+            }
+
+            let sanitizedName = sanitizedServiceName(rawName)
+            guard !sanitizedName.isEmpty else {
+                airPlayBonjourLog.warning("[AirPlayBonjourName] computer name branch=EMPTY raw=\(rawName, privacy: .public)")
+                return nil
+            }
+
+            airPlayBonjourLog.info("[AirPlayBonjourName] computer name branch=FOUND raw=\(rawName, privacy: .public) sanitized=\(sanitizedName, privacy: .public) encoding=\(encoding)")
+            return sanitizedName
+        }
+
+        private static func sanitizedServiceName(_ value: String) -> String {
+            value
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
         }
 
         private static func persistentUUIDString() -> String {

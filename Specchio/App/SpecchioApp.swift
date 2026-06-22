@@ -79,6 +79,10 @@ private struct SpecchioPaywallFocusedKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+private struct SpecchioInteractiveOnboardingFocusedKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 extension FocusedValues {
     var specchioLaunchMode: Binding<SpecchioLaunchMode>? {
         get { self[SpecchioLaunchModeFocusedKey.self] }
@@ -88,6 +92,11 @@ extension FocusedValues {
     var specchioShowPaywall: (() -> Void)? {
         get { self[SpecchioPaywallFocusedKey.self] }
         set { self[SpecchioPaywallFocusedKey.self] = newValue }
+    }
+
+    var specchioStartInteractiveOnboarding: (() -> Void)? {
+        get { self[SpecchioInteractiveOnboardingFocusedKey.self] }
+        set { self[SpecchioInteractiveOnboardingFocusedKey.self] = newValue }
     }
 }
 
@@ -150,6 +159,7 @@ private struct SpecchioWindowRoot: View {
         ))
         .focusedSceneValue(\.specchioLaunchMode, $selectedMode)
         .focusedSceneValue(\.specchioShowPaywall, showPaywallFromDevMenu)
+        .focusedSceneValue(\.specchioStartInteractiveOnboarding, startInteractiveOnboardingFromDevMenu)
         .onAppear {
             SpecchioLogger.easyMode.info("[SpecchioWindowRoot] appeared windowID=\(windowID, privacy: .public) mode=\(selectedMode.logName, privacy: .public) windowPolicy=\(windowAspectPolicy.logDescription, privacy: .public) chromeStyle=\(windowChromeStyle.logName, privacy: .public) alwaysOnTop=\(alwaysOnTop)")
         }
@@ -168,11 +178,23 @@ private struct SpecchioWindowRoot: View {
         SpecchioLogger.ui.info("[SpecchioWindowRoot] Dev menu paywall presentation requested windowID=\(windowID, privacy: .public) previousPresented=\(showDevMenuPaywall)")
         showDevMenuPaywall = true
     }
+
+    private func startInteractiveOnboardingFromDevMenu() {
+        SpecchioLogger.easyMode.info("[SpecchioWindowRoot] Dev menu onboarding requested windowID=\(windowID, privacy: .public) currentMode=\(selectedMode.logName, privacy: .public)")
+        selectedMode = .easy
+        DispatchQueue.main.async {
+            InteractiveTutorialCoordinator.shared.startFirstBluetoothSetup(
+                source: "Dev menu Onboarding",
+                resetPhase: true
+            )
+        }
+    }
 }
 
 private struct SpecchioAppCommands: Commands {
     @FocusedBinding(\.specchioLaunchMode) private var focusedMode: SpecchioLaunchMode?
     @FocusedValue(\.specchioShowPaywall) private var showFocusedPaywall
+    @FocusedValue(\.specchioStartInteractiveOnboarding) private var startFocusedInteractiveOnboarding
 
     let appDelegate: AppDelegate
     let appState: AppState
@@ -209,6 +231,10 @@ private struct SpecchioAppCommands: Commands {
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
 
+            Button("Onboarding") {
+                startInteractiveOnboardingFromDevMenu()
+            }
+
             Button("Paywall") {
                 showPaywallFromDevMenu()
             }
@@ -238,6 +264,16 @@ private struct SpecchioAppCommands: Commands {
 
         SpecchioLogger.ui.info("[SpecchioAppCommands] Dev menu selected Paywall branch=focused-window")
         showFocusedPaywall()
+    }
+
+    private func startInteractiveOnboardingFromDevMenu() {
+        guard let startFocusedInteractiveOnboarding else {
+            SpecchioLogger.easyMode.info("[SpecchioAppCommands] Dev menu selected Onboarding branch=no-focused-window")
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[SpecchioAppCommands] Dev menu selected Onboarding branch=focused-window")
+        startFocusedInteractiveOnboarding()
     }
 }
 

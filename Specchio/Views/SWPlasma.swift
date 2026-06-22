@@ -1058,6 +1058,10 @@ struct SWPlasmaActionButton: View {
         static let horizontalPadding: CGFloat = 28
     }
 
+    static var visualHeight: CGFloat {
+        Layout.height
+    }
+
     private var hasCustomPalette: Bool {
         c1 != nil || c2 != nil || c3 != nil || c4 != nil || c5 != nil
     }

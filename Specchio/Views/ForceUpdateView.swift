@@ -9,8 +9,14 @@ struct ForceUpdateView: View {
         VStack(spacing: 24) {
             Spacer()
 
-            Text("🪞")
-                .font(.system(size: 80))
+            Image("SpecchioLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 80, height: 80)
+                .accessibilityHidden(true)
+                .onAppear {
+                    SpecchioLogger.ui.info("[ForceUpdateView] app logo appeared asset=SpecchioLogo width=80 height=80")
+                }
 
             Text("Update Required")
                 .font(.largeTitle.weight(.bold))

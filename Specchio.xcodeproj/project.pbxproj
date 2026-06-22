@@ -24,9 +24,11 @@
 		SPC001000000000000000001 /* SpecchioSharedControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = SPC001000000000000000002 /* SpecchioSharedControls.swift */; };
 		GSW000000000000000001 /* SWGlowSweep.swift in Sources */ = {isa = PBXBuildFile; fileRef = GSW000000000000000002 /* SWGlowSweep.swift */; };
 		PLS000000000000000001 /* SWPlasma.swift in Sources */ = {isa = PBXBuildFile; fileRef = PLS000000000000000002 /* SWPlasma.swift */; };
+		TUTVIDBF000000000001 /* TutorialVideoPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = TUTVIDFR000000000001 /* TutorialVideoPlayerView.swift */; };
 		BT000001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift */; };
 		BT000002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift */; };
 		BT000003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist in Resources */ = {isa = PBXBuildFile; fileRef = BT100003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist */; };
+		ITUTVIDBF000000000001 /* InteractiveTutorialVideos in Resources */ = {isa = PBXBuildFile; fileRef = ITUTVIDFR000000000001 /* InteractiveTutorialVideos */; };
 		PAYWALLASSETBUILD001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = PAYWALLASSETREF0001 /* Assets.xcassets */; };
 		BT000004B7A5E4D3C2B1A0904 /* KeyPadClone.swift in Sources */ = {isa = PBXBuildFile; fileRef = BT100004B7A5E4D3C2B1A0904 /* KeyPadClone.swift */; };
 		MB1A2B3C4D5E6F7081920001 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = MB1A2B3C4D5E6F7081920002 /* MenuBarView.swift */; };
@@ -102,6 +104,7 @@
 		AIRPBF00000000000000014 /* AirPlayH264DumpWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */; };
 		AIRPTB00000000000000001 /* AirPlayProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */; };
 		FPLAYBF0000000000000001 /* libfairplay.dylib in Copy AirPlay FairPlay Provider */ = {isa = PBXBuildFile; fileRef = FPLAYFR0000000000000001 /* libfairplay.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		ITUTBF0000000000000001 /* InteractiveTutorial.swift in Sources */ = {isa = PBXBuildFile; fileRef = ITUTFR0000000000000001 /* InteractiveTutorial.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -176,6 +179,7 @@
 		FDIAG000000000000002 /* FrameDropDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameDropDiagnostics.swift; sourceTree = "<group>"; };
 		IOSMGR0000000000000002 /* IOSScreenCaptureManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSScreenCaptureManager.swift; sourceTree = "<group>"; };
 		IOSMON0000000000000002 /* IOSScreenCaptureDeviceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSScreenCaptureDeviceMonitor.swift; sourceTree = "<group>"; };
+		ITUTVIDFR000000000001 /* InteractiveTutorialVideos */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Resources/InteractiveTutorialVideos; sourceTree = "<group>"; };
 		IVP001000000000000000002 /* InternalVideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InternalVideoPlayerView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F607182930A002 /* H264StreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = H264StreamManager.swift; sourceTree = "<group>"; };
 		RKH264DEC000000000002 /* ReplayKitH264VideoDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayKitH264VideoDecoder.swift; sourceTree = "<group>"; };
@@ -212,6 +216,7 @@
 		SPC001000000000000000002 /* SpecchioSharedControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpecchioSharedControls.swift; sourceTree = "<group>"; };
 		GSW000000000000000002 /* SWGlowSweep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWGlowSweep.swift; sourceTree = "<group>"; };
 		PLS000000000000000002 /* SWPlasma.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SWPlasma.swift; sourceTree = "<group>"; };
+		TUTVIDFR000000000001 /* TutorialVideoPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialVideoPlayerView.swift; sourceTree = "<group>"; };
 		EE8BBF41FFCB4E61A85D213A /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiagnosticsView.swift; sourceTree = "<group>"; };
 		FU1A2B3C4D5E6F7081920002 /* ForceUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceUpdateChecker.swift; sourceTree = "<group>"; };
 		FV1A2B3C4D5E6F7081920004 /* ForceUpdateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceUpdateView.swift; sourceTree = "<group>"; };
@@ -237,6 +242,7 @@
 		AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayH264DumpWriter.swift; sourceTree = "<group>"; };
 		AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayProtocolTests.swift; sourceTree = "<group>"; };
 		FPLAYFR0000000000000001 /* libfairplay.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libfairplay.dylib; sourceTree = "<group>"; };
+		ITUTFR0000000000000001 /* InteractiveTutorial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTutorial.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -347,11 +353,20 @@
 				SPC001000000000000000002 /* SpecchioSharedControls.swift */,
 				GSW000000000000000002 /* SWGlowSweep.swift */,
 				PLS000000000000000002 /* SWPlasma.swift */,
+				TUTVIDFR000000000001 /* TutorialVideoPlayerView.swift */,
 				820B4E6C3FAA157466078261 /* StatusBarView.swift */,
 				EE8BBF41FFCB4E61A85D213A /* DiagnosticsView.swift */,
 				7D31B34BB46982146A203F97 /* ToolbarView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		ITUTGR0000000000000001 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				ITUTFR0000000000000001 /* InteractiveTutorial.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		BT500001B7A5E4D3C2B1A0900 /* Bluetooth */ = {
@@ -447,10 +462,12 @@
 				7C8DFE7F42777A54F414919E /* Device */,
 				5B27EB474E56D2D5482C7CF5 /* Display */,
 				278D97612AC730DC68541D5D /* Input */,
+				ITUTGR0000000000000001 /* Onboarding */,
 				2F632AF6D39BF40DD8D727F6 /* Utilities */,
 				8438597CCC7DCBB78A0189AC /* Views */,
 				C591E507E33018336A353545 /* WDA */,
 				PAYWALLASSETREF0001 /* Assets.xcassets */,
+				ITUTVIDFR000000000001 /* InteractiveTutorialVideos */,
 			);
 			path = Specchio;
 			sourceTree = "<group>";
@@ -551,6 +568,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				PAYWALLASSETBUILD001 /* Assets.xcassets in Resources */,
+				ITUTVIDBF000000000001 /* InteractiveTutorialVideos in Resources */,
 				1C450B1C2D3E4F5061728300 /* AppIcon.icns in Resources */,
 				BT000003B7A5E4D3C2B1A0903 /* HIDServiceRecord.plist in Resources */,
 			);
@@ -643,8 +661,10 @@
 				RKH264DEC000000000001 /* ReplayKitH264VideoDecoder.swift in Sources */,
 				RKAUDSTR00000000001 /* ReplayKitAudioStreamManager.swift in Sources */,
 				526C5E7AAE1F421CABD289F2 /* EasyModeView.swift in Sources */,
+				TUTVIDBF000000000001 /* TutorialVideoPlayerView.swift in Sources */,
 				IOSMGR0000000000000001 /* IOSScreenCaptureManager.swift in Sources */,
 				IOSMON0000000000000001 /* IOSScreenCaptureDeviceMonitor.swift in Sources */,
+				ITUTBF0000000000000001 /* InteractiveTutorial.swift in Sources */,
 				4E3F328F83C1EC46B6DB421C /* InputOverlay.swift in Sources */,
 				3DC1A0AD20EFD4E2013EF082 /* InputOverlayView.swift in Sources */,
 				IVP001000000000000000001 /* InternalVideoPlayerView.swift in Sources */,
@@ -874,7 +894,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060702;
+				CURRENT_PROJECT_VERSION = 2026060902;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -882,7 +902,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060702;
+				MARKETING_VERSION = 2026060902;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -897,7 +917,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060702;
+				CURRENT_PROJECT_VERSION = 2026060902;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -906,7 +926,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060702;
+				MARKETING_VERSION = 2026060902;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;

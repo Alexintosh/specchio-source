@@ -18,19 +18,24 @@ class AppSettings: ObservableObject {
         static let autoUnlock = "autoUnlock"
         static let selectedTeamID = "selectedTeamID"
         static let onboardingStep = "onboardingStep"
+        static let interactiveTutorialPhase = "interactiveTutorialPhase"
         static let easyMouseClutchMode = "easyMouseClutchMode"
         static let easyHideLocalCursor = "easyHideLocalCursor"
         static let easyPointerSpikeEnabled = "easyPointerSpikeEnabled"
         static let easyPointerSpikeOverlayEnabled = "easyPointerSpikeOverlayEnabled"
         static let easyPointerSpikeTransportVariant = "easyPointerSpikeTransportVariant"
+        static let easyTrackpadSwipeToDragEnabled = "easyTrackpadSwipeToDragEnabled"
+        static let easyTrackpadSwipeToDragMode = "easyTrackpadSwipeToDragMode"
         static let easyPointerDefaultsMigrated = "easyPointerDefaultsMigrated"
         static let easyToolbarCommandOrder = "easyToolbarCommandOrder"
         static let easyToolbarVisibleCommandOrder = "easyToolbarVisibleCommandOrder"
         static let easyToolbarOverflowCommandOrder = "easyToolbarOverflowCommandOrder"
+        static let easyToolbarAlwaysVisible = "easyToolbarAlwaysVisible"
         static let easyShowFPSCounter = "easyShowFPSCounter"
         static let easyReplayKitH264TargetFPS = "easyReplayKitH264TargetFPS"
         static let easyAirPlayQuality = "easyAirPlayQuality"
         static let easyUSBTargetFPS = "easyUSBTargetFPS"
+        static let easyAirPlayConnectionTutorialHidden = "easyAirPlayConnectionTutorialHidden"
         static let showDeveloperOptions = "showDeveloperOptions"
     }
 
@@ -39,6 +44,10 @@ class AppSettings: ObservableObject {
         static let easyReplayKitH264TargetFPS: Double = 30
         static let easyAirPlayQuality = EasyAirPlayQuality.balanced
         static let easyUSBTargetFPS: Double = 60
+        static let easyToolbarAlwaysVisible = true
+        static let easyAirPlayConnectionTutorialHidden = false
+        static let easyTrackpadSwipeToDragEnabled = false
+        static let easyTrackpadSwipeToDragMode = EasyTrackpadSwipeToDragMode.live
     }
 
     static func bluetoothAutoConnectEnabled(defaults: UserDefaults = .standard) -> Bool {
@@ -116,6 +125,30 @@ class AppSettings: ObservableObject {
         static let defaultValue = absoluteMouse
     }
 
+    enum EasyTrackpadSwipeToDragMode {
+        static let live = "live"
+        static let delayed = "delayed"
+        static let allowedValues = [live, delayed]
+
+        static func label(for value: String) -> String {
+            switch sanitized(value) {
+            case delayed:
+                return "Delayed"
+            case live:
+                return "Live"
+            default:
+                return "Live"
+            }
+        }
+
+        static func sanitized(_ value: String?) -> String {
+            guard let value, allowedValues.contains(value) else {
+                return live
+            }
+            return value
+        }
+    }
+
     @AppStorage(Keys.defaultDisplayMode) var defaultDisplayMode: String = DisplayMode.auto.rawValue
     @AppStorage(Keys.screenshotFPS) var screenshotFPS: Double = 10
     /// MJPEG quality sent to WDA (1–100). Lower = faster encoding, higher = sharper.
@@ -150,12 +183,18 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyPointerSpikeOverlayEnabled) var easyPointerSpikeOverlayEnabled: Bool = false
     /// Easy mode: active HID report strategy for pointer determinism testing.
     @AppStorage(Keys.easyPointerSpikeTransportVariant) var easyPointerSpikeTransportVariant: String = EasyPointerSpikeTransport.defaultValue
+    /// Easy mode experiment: convert horizontal precise trackpad scrolls into iPhone drag gestures.
+    @AppStorage(Keys.easyTrackpadSwipeToDragEnabled) var easyTrackpadSwipeToDragEnabled: Bool = Defaults.easyTrackpadSwipeToDragEnabled
+    /// Easy mode experiment: send trackpad swipes live or after the touchpad gesture ends.
+    @AppStorage(Keys.easyTrackpadSwipeToDragMode) var easyTrackpadSwipeToDragMode: String = Defaults.easyTrackpadSwipeToDragMode
     /// Easy mode: legacy ordered toolbar command identifiers. Used to migrate older toolbar settings.
     @AppStorage(Keys.easyToolbarCommandOrder) var easyToolbarCommandOrder: String = EasyToolbarCommand.defaultOrderStorageValue
     /// Easy mode: ordered toolbar command identifiers that should stay visible, capped by EasyToolbarCommandLayout.
     @AppStorage(Keys.easyToolbarVisibleCommandOrder) var easyToolbarVisibleCommandOrder: String = EasyToolbarCommand.defaultVisibleOrderStorageValue
     /// Easy mode: ordered toolbar command identifiers that should live in the overflow menu.
     @AppStorage(Keys.easyToolbarOverflowCommandOrder) var easyToolbarOverflowCommandOrder: String = EasyToolbarCommand.defaultOverflowOrderStorageValue
+    /// Easy mode: keep the presentation toolbar visible instead of revealing it only near the top edge.
+    @AppStorage(Keys.easyToolbarAlwaysVisible) var easyToolbarAlwaysVisible: Bool = Defaults.easyToolbarAlwaysVisible
     /// Easy mode: show the live FPS count in the bottom status bar.
     @AppStorage(Keys.easyShowFPSCounter) var easyShowFPSCounter: Bool = false
     /// Easy mode: ReplayKit H.264 frame gate target advertised to the broadcast extension.
@@ -164,6 +203,8 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyAirPlayQuality) var easyAirPlayQuality: String = Defaults.easyAirPlayQuality
     /// Easy mode: native USB screen capture frame publish target.
     @AppStorage(Keys.easyUSBTargetFPS) var easyUSBTargetFPS: Double = Defaults.easyUSBTargetFPS
+    /// Easy mode: hide the AirPlay connection tutorial after the user opts out.
+    @AppStorage(Keys.easyAirPlayConnectionTutorialHidden) var easyAirPlayConnectionTutorialHidden: Bool = Defaults.easyAirPlayConnectionTutorialHidden
     /// Reveal development-only controls in Settings.
     @AppStorage(Keys.showDeveloperOptions) var showDeveloperOptions: Bool = false
 }

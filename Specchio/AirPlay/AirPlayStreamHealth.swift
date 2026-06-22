@@ -7,7 +7,7 @@ enum AirPlayStreamHealth: Equatable {
     case pairing
     case settingUp
     case receivingVideo
-    case screenOff(lastFrameAge: TimeInterval)
+    case videoIdle(lastFrameAge: TimeInterval)
     case stale(lastFrameAge: TimeInterval)
     case failed(reason: String)
     case disconnected(reason: String)
@@ -26,8 +26,8 @@ enum AirPlayStreamHealth: Equatable {
             return "settingUp"
         case .receivingVideo:
             return "receivingVideo"
-        case .screenOff(let lastFrameAge):
-            return "screenOff(lastFrameAge=\(String(format: "%.1f", lastFrameAge)))"
+        case .videoIdle(let lastFrameAge):
+            return "videoIdle(lastFrameAge=\(String(format: "%.1f", lastFrameAge)))"
         case .stale(let lastFrameAge):
             return "stale(lastFrameAge=\(String(format: "%.1f", lastFrameAge)))"
         case .failed(let reason):
@@ -51,8 +51,8 @@ enum AirPlayStreamHealth: Equatable {
             return "AirPlay: Setting up video"
         case .receivingVideo:
             return "AirPlay: Receiving video"
-        case .screenOff:
-            return "AirPlay: Screen off"
+        case .videoIdle:
+            return "AirPlay: Idle"
         case .stale:
             return "AirPlay: Stale"
         case .failed:
@@ -71,7 +71,7 @@ enum AirPlayStreamHealth: Equatable {
 
     var allowsFrameStalenessEvaluation: Bool {
         switch self {
-        case .receivingVideo, .screenOff:
+        case .receivingVideo, .videoIdle:
             return true
         default:
             return false
@@ -84,7 +84,7 @@ enum AirPlayStreamHealth: Equatable {
         freshnessThreshold: TimeInterval
     ) -> AirPlayStreamHealth {
         if let mirrorPacketAge, mirrorPacketAge <= freshnessThreshold {
-            return .screenOff(lastFrameAge: lastFrameAge)
+            return .videoIdle(lastFrameAge: lastFrameAge)
         }
         return .stale(lastFrameAge: lastFrameAge)
     }

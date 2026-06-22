@@ -163,6 +163,27 @@ struct DiagnosticsView: View {
                                 .cornerRadius(6)
                         }
                     }
+
+                    Group {
+                        sectionHeader("Input Experiments")
+                        row("Trackpad Swipe To Drag", info.trackpadSwipeToDragEnabled ? "Enabled" : "Disabled")
+                        row("Trackpad Swipe Mode", AppSettings.EasyTrackpadSwipeToDragMode.label(for: info.trackpadSwipeToDragMode))
+                        row("Trackpad Gesture Diagnostics", FrameDropDiagnostics.latestLogPath)
+                        if info.recentTrackpadGestureEvents.isEmpty {
+                            row("Recent Trackpad Gesture Events", "(none)")
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Recent Trackpad Gesture Events")
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(info.recentTrackpadGestureEvents.joined(separator: "\n"))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .padding(8)
+                                    .background(Color(nsColor: .textBackgroundColor))
+                                    .cornerRadius(6)
+                            }
+                        }
+                    }
                 }
                 .padding(16)
             }
@@ -262,6 +283,22 @@ struct DiagnosticsView: View {
             if case .failed(let msg) = appState.connectionState { return msg }
             return ""
         }()
+
+        let storedTrackpadSwipeToDrag = UserDefaults.standard.object(forKey: AppSettings.Keys.easyTrackpadSwipeToDragEnabled)
+        if let value = storedTrackpadSwipeToDrag as? Bool {
+            info.trackpadSwipeToDragEnabled = value
+        } else if let value = storedTrackpadSwipeToDrag as? NSNumber {
+            info.trackpadSwipeToDragEnabled = value.boolValue
+        } else {
+            info.trackpadSwipeToDragEnabled = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
+        }
+        info.trackpadSwipeToDragMode = AppSettings.EasyTrackpadSwipeToDragMode.sanitized(
+            UserDefaults.standard.string(forKey: AppSettings.Keys.easyTrackpadSwipeToDragMode)
+        )
+        info.recentTrackpadGestureEvents = FrameDropDiagnostics.recentLines(
+            containing: "\"source\":\"easyTrackpadGesture\"",
+            limit: 20
+        )
     }
 
     private func copyToClipboard() {
@@ -360,6 +397,17 @@ struct DiagnosticsView: View {
             lines.append("=== Build Log (last 200 lines) ===")
             lines.append(info.buildLog)
         }
+        lines.append("")
+        lines.append("=== Input Experiments ===")
+        lines.append("Trackpad Swipe To Drag: \(info.trackpadSwipeToDragEnabled ? "Enabled" : "Disabled")")
+        lines.append("Trackpad Swipe Mode: \(AppSettings.EasyTrackpadSwipeToDragMode.label(for: info.trackpadSwipeToDragMode))")
+        lines.append("Trackpad Gesture Diagnostics: \(FrameDropDiagnostics.latestLogPath)")
+        if info.recentTrackpadGestureEvents.isEmpty {
+            lines.append("Recent Trackpad Gesture Events: (none)")
+        } else {
+            lines.append("Recent Trackpad Gesture Events:")
+            lines.append(contentsOf: info.recentTrackpadGestureEvents)
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -414,6 +462,9 @@ struct DiagnosticsInfo {
     var wdaVersion: String = ""
     var lastBuildError: String = ""
     var buildLog: String = ""
+    var trackpadSwipeToDragEnabled: Bool = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
+    var trackpadSwipeToDragMode: String = AppSettings.Defaults.easyTrackpadSwipeToDragMode
+    var recentTrackpadGestureEvents: [String] = []
 
     static let empty = DiagnosticsInfo()
 }

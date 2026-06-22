@@ -244,9 +244,26 @@ private enum SpecchioInternalVideoMetrics {
 struct SpecchioSetupTutorialButton: View {
     @StateObject private var tutorial = SpecchioSetupTutorialWindowController()
     private let providedTutorial: SpecchioSetupTutorialWindowController?
+    private let title: String
+    private let systemImage: String
+    private let accessibilityLabel: String
+    private let debugName: String
+    private let customAction: (() -> Void)?
 
-    init(tutorial: SpecchioSetupTutorialWindowController? = nil) {
+    init(
+        tutorial: SpecchioSetupTutorialWindowController? = nil,
+        title: String = "Setup tutorial",
+        systemImage: String = "play.rectangle",
+        accessibilityLabel: String = "Setup tutorial",
+        debugName: String = "setup-tutorial-button",
+        action: (() -> Void)? = nil
+    ) {
         self.providedTutorial = tutorial
+        self.title = title
+        self.systemImage = systemImage
+        self.accessibilityLabel = accessibilityLabel
+        self.debugName = debugName
+        self.customAction = action
     }
 
     private var activeTutorial: SpecchioSetupTutorialWindowController {
@@ -255,21 +272,26 @@ struct SpecchioSetupTutorialButton: View {
 
     var body: some View {
         SWPlasmaActionButton(
-            title: "Setup tutorial",
-            systemImage: "play.rectangle",
+            title: title,
+            systemImage: systemImage,
             foregroundColor: .white,
             style: .prism,
             scale: 1.25,
             intensity: 1.1,
             distortion: 1.0,
-            accessibilityLabel: "Setup tutorial",
-            debugName: "setup-tutorial-button"
+            accessibilityLabel: accessibilityLabel,
+            debugName: debugName
         ) {
-            SpecchioLogger.easyMode.info("[SetupTutorialButton] tapped branch=open-floating-window")
-            activeTutorial.show()
+            if let customAction {
+                SpecchioLogger.easyMode.info("[SetupTutorialButton] tapped branch=custom-action title=\(title, privacy: .public) systemImage=\(systemImage, privacy: .public)")
+                customAction()
+            } else {
+                SpecchioLogger.easyMode.info("[SetupTutorialButton] tapped branch=open-floating-window title=\(title, privacy: .public) systemImage=\(systemImage, privacy: .public)")
+                activeTutorial.show()
+            }
         }
         .onAppear {
-            SpecchioLogger.easyMode.info("[SetupTutorialButton] appeared branch=ready")
+            SpecchioLogger.easyMode.info("[SetupTutorialButton] appeared branch=ready title=\(title, privacy: .public) systemImage=\(systemImage, privacy: .public) hasCustomAction=\(customAction != nil)")
         }
     }
 }

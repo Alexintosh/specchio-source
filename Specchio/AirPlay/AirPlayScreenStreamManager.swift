@@ -8,6 +8,7 @@ private let airPlayLog = SpecchioLogger.airPlay
 private let airPlayReceiverStatusFlagsNoPassword = 68
 private let airPlayMirrorStreamType = 110
 private let airPlayAudioStreamType = 96
+private let airPlayPairingPINMinimumVisibleSeconds: TimeInterval = 5
 
 struct AirPlayReceiverDisplayConfiguration: Equatable {
     let quality: String
@@ -523,6 +524,9 @@ final class AirPlayScreenStreamManager: ObservableObject {
     private var controlServer: AirPlayControlServer?
     private var bonjourPublisher: AirPlayBonjourPublisher?
     private var bonjourPublisherID: UUID?
+    private var pairingPINDisplayGeneration = 0
+    private var pairingPINVisibleUntil: Date?
+    private var pairingPINClearWorkItem: DispatchWorkItem?
     private var receiverConfiguration: AirPlayBonjourPublisher.Configuration?
     private var shouldAdvertise = false
     private var timingServer: AirPlayTimingServer?
@@ -545,6 +549,7 @@ final class AirPlayScreenStreamManager: ObservableObject {
     private var activeTimingPort: UInt16?
     private var controlClientHost: NWEndpoint.Host?
     private let staleFrameThresholdSeconds: TimeInterval = 3.0
+    private let idleFrameOverlayThresholdSeconds: TimeInterval = 60.0
     private let maximumControlTraceEntries = 80
     private let videoQualitySampleIntervalSeconds: CFTimeInterval = 2.0
     private var videoQualitySampleStartedAt: CFTimeInterval?
@@ -684,7 +689,7 @@ final class AirPlayScreenStreamManager: ObservableObject {
                 self.advertisedAirPlayQuality = displayConfiguration.quality
                 self.h264DumpBytes = self.h264DumpWriter?.byteCount ?? 0
                 self.lastSetupStreamType = nil
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "AirPlay stop", force: true)
                 self.recentControlTrace.removeAll()
                 self.fpsFrameTimestamps.removeAll()
             }
@@ -728,7 +733,6 @@ final class AirPlayScreenStreamManager: ObservableObject {
                 self?.controlPort = port
             }
             startBonjourPublisher(controlPort: port)
-            publishStatus("AirPlay advertising as Specchio")
             publishHealth(.waitingForPhone, trigger: "control listener ready")
         case .failed(let reason):
             airPlayLog.error("[AirPlayManager] control listener failed reason=\(reason, privacy: .public)")
@@ -1298,6 +1302,66 @@ final class AirPlayScreenStreamManager: ObservableObject {
         return .ok()
     }
 
+    private func showCurrentPairingPINOnMain(_ pin: String, trigger: String) {
+        pairingPINClearWorkItem?.cancel()
+        pairingPINClearWorkItem = nil
+        pairingPINDisplayGeneration += 1
+        pairingPINVisibleUntil = Date().addingTimeInterval(airPlayPairingPINMinimumVisibleSeconds)
+        currentPairingPIN = pin
+        statusMessage = "AirPlay PIN: \(pin)"
+        airPlayLog.warning("[AirPlayPairing] UI branch=SHOW_PIN_MINIMUM trigger=\(trigger, privacy: .public) pinDigits=\(pin.count) generation=\(self.pairingPINDisplayGeneration) minimumSeconds=\(airPlayPairingPINMinimumVisibleSeconds)")
+    }
+
+    private func clearCurrentPairingPINOnMain(trigger: String, force: Bool = false) {
+        guard currentPairingPIN != nil else {
+            pairingPINClearWorkItem?.cancel()
+            pairingPINClearWorkItem = nil
+            pairingPINVisibleUntil = nil
+            airPlayLog.info("[AirPlayPairing] UI branch=CLEAR_PIN_SKIPPED trigger=\(trigger, privacy: .public) reason=no-visible-pin force=\(force)")
+            return
+        }
+
+        if force {
+            pairingPINClearWorkItem?.cancel()
+            pairingPINClearWorkItem = nil
+            pairingPINVisibleUntil = nil
+            currentPairingPIN = nil
+            airPlayLog.info("[AirPlayPairing] UI branch=CLEAR_PIN_FORCED trigger=\(trigger, privacy: .public)")
+            return
+        }
+
+        guard let visibleUntil = pairingPINVisibleUntil else {
+            currentPairingPIN = nil
+            airPlayLog.info("[AirPlayPairing] UI branch=CLEAR_PIN_IMMEDIATE trigger=\(trigger, privacy: .public) reason=no-visible-until")
+            return
+        }
+
+        let remainingSeconds = visibleUntil.timeIntervalSinceNow
+        guard remainingSeconds > 0 else {
+            pairingPINVisibleUntil = nil
+            currentPairingPIN = nil
+            airPlayLog.info("[AirPlayPairing] UI branch=CLEAR_PIN_AFTER_MINIMUM trigger=\(trigger, privacy: .public)")
+            return
+        }
+
+        pairingPINClearWorkItem?.cancel()
+        let generation = pairingPINDisplayGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard self.pairingPINDisplayGeneration == generation else {
+                airPlayLog.info("[AirPlayPairing] UI branch=DEFERRED_CLEAR_SKIPPED trigger=\(trigger, privacy: .public) reason=generation-changed expected=\(generation) actual=\(self.pairingPINDisplayGeneration)")
+                return
+            }
+            self.pairingPINVisibleUntil = nil
+            self.currentPairingPIN = nil
+            self.pairingPINClearWorkItem = nil
+            airPlayLog.info("[AirPlayPairing] UI branch=DEFERRED_CLEAR_APPLIED trigger=\(trigger, privacy: .public) generation=\(generation)")
+        }
+        pairingPINClearWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + remainingSeconds, execute: workItem)
+        airPlayLog.info("[AirPlayPairing] UI branch=DEFERRED_CLEAR_SCHEDULED trigger=\(trigger, privacy: .public) generation=\(generation) remainingSeconds=\(remainingSeconds)")
+    }
+
     private func handlePairingResult(_ result: AirPlayPairingSession.Result, trigger: String) {
         airPlayLog.info("[AirPlayPairing] result trigger=\(trigger, privacy: .public) status=\(result.response.statusCode) phase=\(result.phase.diagnosticDescription, privacy: .public) message=\(result.message, privacy: .public) visiblePINPresent=\(result.visiblePIN != nil) clearPIN=\(result.shouldClearVisiblePIN)")
 
@@ -1312,15 +1376,14 @@ final class AirPlayScreenStreamManager: ObservableObject {
             guard let self else { return }
             if let pin = result.visiblePIN {
                 airPlayLog.info("[AirPlayPairing] UI branch=SHOW_PIN trigger=\(trigger, privacy: .public) pinDigits=\(pin.count)")
-                self.currentPairingPIN = pin
-                self.statusMessage = "AirPlay PIN: \(pin)"
+                self.showCurrentPairingPINOnMain(pin, trigger: trigger)
             } else {
                 airPlayLog.info("[AirPlayPairing] UI branch=NO_NEW_PIN trigger=\(trigger, privacy: .public)")
             }
 
             if result.shouldClearVisiblePIN {
                 airPlayLog.info("[AirPlayPairing] UI branch=CLEAR_PIN trigger=\(trigger, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "\(trigger) result clear")
             } else {
                 airPlayLog.info("[AirPlayPairing] UI branch=KEEP_PIN_STATE trigger=\(trigger, privacy: .public) pinVisible=\(self.currentPairingPIN != nil)")
             }
@@ -1328,11 +1391,11 @@ final class AirPlayScreenStreamManager: ObservableObject {
             switch result.phase {
             case .verified:
                 airPlayLog.info("[AirPlayPairing] UI branch=VERIFIED trigger=\(trigger, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "\(trigger) verified")
                 self.statusMessage = "AirPlay paired; waiting for video setup"
             case .pinSetupComplete:
                 airPlayLog.info("[AirPlayPairing] UI branch=PIN_SETUP_COMPLETE trigger=\(trigger, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "\(trigger) pin setup complete")
                 self.statusMessage = "AirPlay PIN accepted; verifying session"
             case .rejected:
                 airPlayLog.info("[AirPlayPairing] UI branch=REJECTED trigger=\(trigger, privacy: .public)")
@@ -2469,17 +2532,17 @@ final class AirPlayScreenStreamManager: ObservableObject {
                 self.streamHealth = .pairing
             } else if let lastError = self.lastError {
                 airPlayLog.info("[AirPlayManager] teardown UI branch=PRESERVE_ERROR reason=\(reason, privacy: .public) error=\(lastError, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "session teardown preserve error: \(reason)", force: true)
                 self.statusMessage = lastError
                 self.streamHealth = .failed(reason: lastError)
             } else if self.isAdvertising {
                 airPlayLog.info("[AirPlayManager] teardown UI branch=RETURN_TO_WAITING reason=\(reason, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "session teardown return to waiting: \(reason)", force: true)
                 self.statusMessage = "AirPlay waiting for iPhone"
                 self.streamHealth = .waitingForPhone
             } else {
                 airPlayLog.info("[AirPlayManager] teardown UI branch=CLEAR_PIN reason=\(reason, privacy: .public)")
-                self.currentPairingPIN = nil
+                self.clearCurrentPairingPINOnMain(trigger: "session teardown disconnected: \(reason)", force: true)
                 self.statusMessage = "AirPlay waiting for iPhone"
                 self.streamHealth = .disconnected(reason: reason)
             }
@@ -2501,7 +2564,7 @@ final class AirPlayScreenStreamManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             airPlayLog.info("[AirPlayManager] reset UI pairing PIN reason=\(reason, privacy: .public)")
             guard let self else { return }
-            self.currentPairingPIN = nil
+            self.clearCurrentPairingPINOnMain(trigger: "reset session: \(reason)", force: true)
             self.lastMirrorPacketReceivedAt = nil
             self.lastStaleDecisionBranch = nil
             self.clearDecodedVideoStateOnMain(reason: "session reset: \(reason)")
@@ -2640,9 +2703,18 @@ final class AirPlayScreenStreamManager: ObservableObject {
         if let lastMirrorPacketReceivedAt {
             let mirrorPacketAge = now.timeIntervalSince(lastMirrorPacketReceivedAt)
             if mirrorPacketAge <= staleFrameThresholdSeconds {
-                if case .screenOff = streamHealth {
+                guard frameAge >= idleFrameOverlayThresholdSeconds else {
                     logStaleDecision(
-                        branch: "SCREEN_OFF_STILL_INFERRED",
+                        branch: "MIRROR_ACTIVITY_WITHOUT_VIDEO_BELOW_IDLE_THRESHOLD",
+                        frameAge: frameAge,
+                        mirrorPacketAge: mirrorPacketAge
+                    )
+                    return
+                }
+
+                if case .videoIdle = streamHealth {
+                    logStaleDecision(
+                        branch: "AIRPLAY_VIDEO_IDLE_STILL_INFERRED",
                         frameAge: frameAge,
                         mirrorPacketAge: mirrorPacketAge
                     )
@@ -2652,10 +2724,10 @@ final class AirPlayScreenStreamManager: ObservableObject {
                         mirrorPacketAge: mirrorPacketAge,
                         freshnessThreshold: staleFrameThresholdSeconds
                     )
-                    airPlayLog.warning("[AirPlayHealth] screen off inferred branch=MIRROR_ACTIVITY_WITHOUT_VIDEO lastFrameAge=\(frameAge) mirrorPacketAge=\(mirrorPacketAge) threshold=\(self.staleFrameThresholdSeconds) nextHealth=\(nextHealth.diagnosticDescription, privacy: .public)")
+                    airPlayLog.warning("[AirPlayHealth] video idle inferred branch=MIRROR_ACTIVITY_WITHOUT_VIDEO lastFrameAge=\(frameAge) mirrorPacketAge=\(mirrorPacketAge) staleThreshold=\(self.staleFrameThresholdSeconds) idleThreshold=\(self.idleFrameOverlayThresholdSeconds) nextHealth=\(nextHealth.diagnosticDescription, privacy: .public)")
                     streamHealth = nextHealth
                 }
-                statusMessage = "AirPlay screen off"
+                statusMessage = "AirPlay idle"
                 return
             }
             airPlayLog.warning("[AirPlayHealth] stale candidate branch=MIRROR_ACTIVITY_STALE lastFrameAge=\(frameAge) mirrorPacketAge=\(mirrorPacketAge) threshold=\(self.staleFrameThresholdSeconds)")

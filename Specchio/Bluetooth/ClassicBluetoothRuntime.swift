@@ -41,6 +41,61 @@ private func btClearCachedClassicManager(reason: String) -> Bool {
     return hadCachedManager
 }
 
+private func btForwardVoidSelectorToCachedClassicManager(_ selector: Selector, sourceObject: AnyObject, label: String) {
+    guard let manager = btCachedClassicManager() as? NSObject else {
+        NSLog("[Swizzle] %@ requested by %@ but no cached CBClassicManager is available", label, String(describing: type(of: sourceObject)))
+        return
+    }
+    guard manager.responds(to: selector) else {
+        NSLog("[Swizzle] %@ requested by %@ but cached manager %@ does not respond", label, String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+        return
+    }
+    guard let method = class_getInstanceMethod(type(of: manager), selector) else {
+        NSLog("[Swizzle] %@ requested by %@ but implementation lookup failed on %@", label, String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+        return
+    }
+
+    typealias Forwarder = @convention(c) (AnyObject, Selector) -> Void
+    let forward = unsafeBitCast(method_getImplementation(method), to: Forwarder.self)
+    forward(manager, selector)
+    NSLog("[Swizzle] Forwarded %@ from %@ to cached %@", label, String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+}
+
+private func btForwardBoolSelectorToCachedClassicManager(_ selector: Selector, value: Bool, sourceObject: AnyObject, label: String) {
+    guard let manager = btCachedClassicManager() as? NSObject else {
+        NSLog("[Swizzle] %@=%@ requested by %@ but no cached CBClassicManager is available", label, value ? "YES" : "NO", String(describing: type(of: sourceObject)))
+        return
+    }
+    guard manager.responds(to: selector) else {
+        NSLog("[Swizzle] %@=%@ requested by %@ but cached manager %@ does not respond", label, value ? "YES" : "NO", String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+        return
+    }
+    guard let method = class_getInstanceMethod(type(of: manager), selector) else {
+        NSLog("[Swizzle] %@=%@ requested by %@ but implementation lookup failed on %@", label, value ? "YES" : "NO", String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+        return
+    }
+
+    typealias Forwarder = @convention(c) (AnyObject, Selector, Bool) -> Void
+    let forward = unsafeBitCast(method_getImplementation(method), to: Forwarder.self)
+    forward(manager, selector, value)
+    NSLog("[Swizzle] Forwarded %@=%@ from %@ to cached %@", label, value ? "YES" : "NO", String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+}
+
+private func btForwardObjectSelectorToCachedClassicManager(_ selector: Selector, sourceObject: AnyObject, label: String) -> AnyObject? {
+    guard let manager = btCachedClassicManager() as? NSObject else {
+        NSLog("[Swizzle] %@ requested by %@ but no cached CBClassicManager is available", label, String(describing: type(of: sourceObject)))
+        return nil
+    }
+    guard manager.responds(to: selector) else {
+        NSLog("[Swizzle] %@ requested by %@ but cached manager %@ does not respond", label, String(describing: type(of: sourceObject)), String(describing: type(of: manager)))
+        return nil
+    }
+
+    let result = btTakePerformObjectResult(manager.perform(selector), selector: selector)
+    NSLog("[Swizzle] Forwarded %@ from %@ to cached %@ result=%@", label, String(describing: type(of: sourceObject)), String(describing: type(of: manager)), String(describing: result))
+    return result
+}
+
 private func btPerformString(_ object: AnyObject?, selectorName: String) -> String? {
     guard let object = object as? NSObject else { return nil }
     let selector = NSSelectorFromString(selectorName)
@@ -1102,28 +1157,69 @@ func installBluetoothHIDRuntimeSwizzles() {
     didInstallBluetoothHIDRuntimeSwizzles = true
     NSLog("[Swizzle] Installing Bluetooth HID runtime hooks")
 
-    // === Crash Guard: CoreBluetoothUI can send this to AppKit's section controller ===
+    // === Crash Guard: CoreBluetoothUI can send CBManager selectors to AppKit's section controller ===
     // On macOS 26.1, CBDeviceCollectionView.viewDidLoad has been observed sending
-    // sendLocalDeviceStateRequest to NSWindowSectionContentController while loading
-    // IOBluetoothDeviceSelectorController as a sheet. AppKit does not implement that
-    // private Bluetooth selector, so the app aborts with an unrecognized selector
-    // exception before our code regains control.
+    // private Bluetooth selectors to NSWindowSectionContentController while loading
+    // IOBluetoothDeviceSelectorController as a sheet. AppKit does not implement those
+    // selectors, so forward them to the cached CBClassicManager that owns the Bluetooth
+    // state used by the selector.
     if let sectionClass = NSClassFromString("NSWindowSectionContentController") {
-        let selector = NSSelectorFromString("sendLocalDeviceStateRequest")
-        if !class_respondsToSelector(sectionClass, selector) {
+        let deviceStateSelector = NSSelectorFromString("sendLocalDeviceStateRequest")
+        if !class_respondsToSelector(sectionClass, deviceStateSelector) {
             let block: @convention(block) (AnyObject) -> Void = { object in
-                NSLog("[Swizzle] Ignored stray sendLocalDeviceStateRequest sent to %@", String(describing: type(of: object)))
+                btForwardVoidSelectorToCachedClassicManager(
+                    deviceStateSelector,
+                    sourceObject: object,
+                    label: "NSWindowSectionContentController.sendLocalDeviceStateRequest"
+                )
             }
-            if class_addMethod(sectionClass, selector, imp_implementationWithBlock(block), "v@:") {
-                NSLog("[Swizzle] Added crash guard for NSWindowSectionContentController.sendLocalDeviceStateRequest")
+            if class_addMethod(sectionClass, deviceStateSelector, imp_implementationWithBlock(block), "v@:") {
+                NSLog("[Swizzle] Added forwarding shim for NSWindowSectionContentController.sendLocalDeviceStateRequest")
             } else {
-                NSLog("[Swizzle] Failed to add NSWindowSectionContentController.sendLocalDeviceStateRequest crash guard")
+                NSLog("[Swizzle] Failed to add NSWindowSectionContentController.sendLocalDeviceStateRequest forwarding shim")
             }
         } else {
             NSLog("[Swizzle] NSWindowSectionContentController already responds to sendLocalDeviceStateRequest")
         }
+
+        let tccApprovedSelector = NSSelectorFromString("setTccApproved:")
+        if !class_respondsToSelector(sectionClass, tccApprovedSelector) {
+            let block: @convention(block) (AnyObject, Bool) -> Void = { object, approved in
+                btForwardBoolSelectorToCachedClassicManager(
+                    tccApprovedSelector,
+                    value: approved,
+                    sourceObject: object,
+                    label: "NSWindowSectionContentController.setTccApproved"
+                )
+            }
+            if class_addMethod(sectionClass, tccApprovedSelector, imp_implementationWithBlock(block), "v@:B") {
+                NSLog("[Swizzle] Added forwarding shim for NSWindowSectionContentController.setTccApproved:")
+            } else {
+                NSLog("[Swizzle] Failed to add NSWindowSectionContentController.setTccApproved: forwarding shim")
+            }
+        } else {
+            NSLog("[Swizzle] NSWindowSectionContentController already responds to setTccApproved:")
+        }
+
+        let sharedPairingAgentSelector = NSSelectorFromString("sharedPairingAgent")
+        if !class_respondsToSelector(sectionClass, sharedPairingAgentSelector) {
+            let block: @convention(block) (AnyObject) -> AnyObject? = { object in
+                btForwardObjectSelectorToCachedClassicManager(
+                    sharedPairingAgentSelector,
+                    sourceObject: object,
+                    label: "NSWindowSectionContentController.sharedPairingAgent"
+                )
+            }
+            if class_addMethod(sectionClass, sharedPairingAgentSelector, imp_implementationWithBlock(block), "@@:") {
+                NSLog("[Swizzle] Added forwarding shim for NSWindowSectionContentController.sharedPairingAgent")
+            } else {
+                NSLog("[Swizzle] Failed to add NSWindowSectionContentController.sharedPairingAgent forwarding shim")
+            }
+        } else {
+            NSLog("[Swizzle] NSWindowSectionContentController already responds to sharedPairingAgent")
+        }
     } else {
-        NSLog("[Swizzle] NSWindowSectionContentController class unavailable; selector crash guard not installed")
+        NSLog("[Swizzle] NSWindowSectionContentController class unavailable; selector forwarding shims not installed")
     }
 
     // === Swizzle 1: Fix setInitialFirstResponder assertion ===

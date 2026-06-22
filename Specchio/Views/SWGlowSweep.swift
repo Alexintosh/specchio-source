@@ -33,6 +33,20 @@
 
 import SwiftUI
 
+enum SWGlowSweepDirection: String {
+    case leftToRight
+    case rightToLeft
+
+    func offset(isActive: Bool, width: CGFloat, bandWidth: CGFloat) -> CGFloat {
+        switch self {
+        case .leftToRight:
+            return isActive ? width / 2 + bandWidth : -width / 2 - bandWidth
+        case .rightToLeft:
+            return isActive ? -width / 2 - bandWidth : width / 2 + bandWidth
+        }
+    }
+}
+
 struct SWGlowSweep<Content: View>: View {
     @State private var animate = false
 
@@ -40,6 +54,7 @@ struct SWGlowSweep<Content: View>: View {
     var glowColor: Color = .white
     var duration: Double = 2.0
     var bandWidth: CGFloat = 150
+    var direction: SWGlowSweepDirection = .leftToRight
     var debugName: String = "SWGlowSweep"
 
     @ViewBuilder let content: () -> Content
@@ -49,6 +64,7 @@ struct SWGlowSweep<Content: View>: View {
         glowColor: Color = .white,
         duration: Double = 2.0,
         bandWidth: CGFloat = 150,
+        direction: SWGlowSweepDirection = .leftToRight,
         debugName: String = "SWGlowSweep",
         @ViewBuilder content: @escaping () -> Content
     ) {
@@ -56,6 +72,7 @@ struct SWGlowSweep<Content: View>: View {
         self.glowColor = glowColor
         self.duration = duration
         self.bandWidth = bandWidth
+        self.direction = direction
         self.debugName = debugName
         self.content = content
     }
@@ -73,11 +90,11 @@ struct SWGlowSweep<Content: View>: View {
                         .overlay {
                             LinearGradient(
                                 colors: [.clear, glowColor, .clear],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                                startPoint: UnitPoint(x: 0, y: 0.5),
+                                endPoint: UnitPoint(x: 1, y: 0.5)
                             )
                             .frame(width: bandWidth)
-                            .offset(x: animate ? totalWidth / 2 + bandWidth : -totalWidth / 2 - bandWidth)
+                            .offset(x: direction.offset(isActive: animate, width: totalWidth, bandWidth: bandWidth))
                         }
                         .animation(
                             .linear(duration: duration)
@@ -86,15 +103,15 @@ struct SWGlowSweep<Content: View>: View {
                         )
                         .mask { inner }
                         .onAppear {
-                            SpecchioLogger.easyMode.info("[SWGlowSweep] geometry appeared name=\(debugName, privacy: .public) width=\(totalWidth) height=\(geo.size.height) duration=\(duration) bandWidth=\(bandWidth)")
+                            SpecchioLogger.easyMode.info("[SWGlowSweep] geometry appeared name=\(debugName, privacy: .public) width=\(totalWidth) height=\(geo.size.height) duration=\(duration) bandWidth=\(bandWidth) direction=\(direction.rawValue, privacy: .public)")
                         }
                         .onChange(of: geo.size) { _, newSize in
-                            SpecchioLogger.easyMode.info("[SWGlowSweep] geometry changed name=\(debugName, privacy: .public) width=\(newSize.width) height=\(newSize.height) duration=\(duration) bandWidth=\(bandWidth)")
+                            SpecchioLogger.easyMode.info("[SWGlowSweep] geometry changed name=\(debugName, privacy: .public) width=\(newSize.width) height=\(newSize.height) duration=\(duration) bandWidth=\(bandWidth) direction=\(direction.rawValue, privacy: .public)")
                         }
                 }
             }
             .onAppear {
-                SpecchioLogger.easyMode.info("[SWGlowSweep] appeared name=\(debugName, privacy: .public) duration=\(duration) bandWidth=\(bandWidth) source=ShipSwift")
+                SpecchioLogger.easyMode.info("[SWGlowSweep] appeared name=\(debugName, privacy: .public) duration=\(duration) bandWidth=\(bandWidth) direction=\(direction.rawValue, privacy: .public) source=ShipSwift")
                 animate = true
             }
             .onDisappear {
@@ -109,6 +126,7 @@ extension View {
         glowColor: Color = .white,
         duration: Double = 2.0,
         bandWidth: CGFloat = 150,
+        direction: SWGlowSweepDirection = .leftToRight,
         debugName: String = "SWGlowSweep"
     ) -> some View {
         SWGlowSweep(
@@ -116,6 +134,7 @@ extension View {
             glowColor: glowColor,
             duration: duration,
             bandWidth: bandWidth,
+            direction: direction,
             debugName: debugName
         ) {
             self

@@ -120,6 +120,50 @@ enum InputSurfaceRotationMapping {
 ///
 /// Our fix: add a "Prepare Bluetooth" step with a button,
 /// initialize CBClassicManager, wait for poweredOn, THEN show selector.
+enum EasyAutoUnlockHIDResult: Equatable {
+    case started
+    case bluetoothDisconnected
+    case unsupportedCharacters(Int)
+
+    var logName: String {
+        switch self {
+        case .started:
+            return "started"
+        case .bluetoothDisconnected:
+            return "bluetooth-disconnected"
+        case .unsupportedCharacters(let count):
+            return "unsupported-characters-count-\(count)"
+        }
+    }
+}
+
+private enum EasyAutoUnlockSequenceTiming {
+    static let homeToFirstReturn: TimeInterval = 1.75
+    static let firstReturnToPIN: TimeInterval = 2.0
+    static let keyHoldDuration: TimeInterval = 0.03
+    static let keySpacing: TimeInterval = 0.25
+}
+
+private enum TrackpadSwipeDragMetrics {
+    static let minimumHorizontalCommitDelta: CGFloat = 24
+    static let horizontalDominanceRatio: CGFloat = 1.4
+    static let maximumSyntheticDragFractionOfSurface: CGFloat = 0.72
+    static let dragScale: CGFloat = 1.0
+    static let directionMultiplier: CGFloat = 1.0
+}
+
+private enum TrackpadSwipeDragPhase: String {
+    case idle
+    case evaluating
+    case delayedReady
+    case dragging
+}
+
+private enum TrackpadSwipeDragDirection: String {
+    case left
+    case right
+}
+
 final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicationDelegate, NSWindowDelegate, CBCentralManagerDelegate, IOBluetoothL2CAPChannelDelegate {
     @Published private(set) var isBluetoothHIDConnected = false
     @Published private(set) var bluetoothAutoConnectOverlay: BluetoothAutoConnectOverlayState?
@@ -168,6 +212,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var replayKitInputGateDropCount = 0
     private let connectionFallbackQueue = DispatchQueue(label: "com.alexintosh.Specchio.bluetooth-connect-fallback", qos: .userInitiated)
     private let l2capOpenQueue = DispatchQueue(label: "com.alexintosh.Specchio.bluetooth-l2cap-open", qos: .userInitiated)
+    private let interactiveTutorialOverlay = InteractiveTutorialBluetoothPanelOverlayController()
     private var pairingNotificationObservers: [NSObjectProtocol] = []
     private var retainedPairingPeersByAddress: [String: NSObject] = [:]
     private var postPairingPrepareResetKeys: Set<String> = []
@@ -207,6 +252,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var mouseDeltaRemainderX: CGFloat = 0
     private var mouseDeltaRemainderY: CGFloat = 0
     private var easyMouseClutchModeEnabled = true
+    private var trackpadSwipeToDragEnabled = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
+    private var trackpadSwipeToDragMode = AppSettings.Defaults.easyTrackpadSwipeToDragMode
+    private var trackpadSwipeDragPhase: TrackpadSwipeDragPhase = .idle
+    private var trackpadSwipeDragStartPhonePoint: CGPoint?
+    private var trackpadSwipeDragLatestPhonePoint: CGPoint?
+    private var trackpadSwipeDragAccumulatedHorizontalDelta: CGFloat = 0
+    private var trackpadSwipeDragAccumulatedVerticalDelta: CGFloat = 0
+    private var trackpadSwipeDragEventCount = 0
+    private var trackpadSwipeDragMoveCount = 0
+    private var trackpadSwipeDragGestureID = 0
+    private var trackpadSwipeDragStartUptime: TimeInterval = 0
+    private var trackpadSwipeDragLastEventUptime: TimeInterval = 0
+    private var trackpadSwipeDragSyntheticButtonDown = false
     weak var inputWindow: NSWindow?
     private var inputSurfaceFrameInWindow: CGRect?
     private var inputSurfaceRotationDegrees = 0
@@ -700,6 +758,64 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
     }
 
+    func setTrackpadSwipeToDragEnabled(_ enabled: Bool, reason: String) {
+        guard Thread.isMainThread else {
+            runOnMain("setTrackpadSwipeToDragEnabled") { [weak self] in
+                self?.setTrackpadSwipeToDragEnabled(enabled, reason: reason)
+            }
+            return
+        }
+
+        let previous = trackpadSwipeToDragEnabled
+        trackpadSwipeToDragEnabled = enabled
+        appendLog("[TrackpadSwipeDrag] setting sync reason=\(reason) previous=\(previous) enabled=\(enabled) mode=\(trackpadSwipeToDragMode) phase=\(trackpadSwipeDragPhase.rawValue) syntheticButtonDown=\(trackpadSwipeDragSyntheticButtonDown)")
+        recordTrackpadSwipeDiagnostic(
+            event: "settingChanged",
+            reason: reason,
+            details: [
+                "previousEnabled": String(previous),
+                "enabled": String(enabled),
+                "mode": trackpadSwipeToDragMode,
+                "phase": trackpadSwipeDragPhase.rawValue,
+                "syntheticButtonDown": String(trackpadSwipeDragSyntheticButtonDown)
+            ]
+        )
+
+        guard previous != enabled else { return }
+        if !enabled {
+            cancelTrackpadSwipeDrag(reason: "setting-disabled")
+        }
+    }
+
+    func setTrackpadSwipeToDragMode(_ mode: String, reason: String) {
+        guard Thread.isMainThread else {
+            runOnMain("setTrackpadSwipeToDragMode") { [weak self] in
+                self?.setTrackpadSwipeToDragMode(mode, reason: reason)
+            }
+            return
+        }
+
+        let sanitizedMode = AppSettings.EasyTrackpadSwipeToDragMode.sanitized(mode)
+        let previous = trackpadSwipeToDragMode
+        trackpadSwipeToDragMode = sanitizedMode
+        appendLog("[TrackpadSwipeDrag] mode sync reason=\(reason) requested=\(mode) previous=\(previous) mode=\(sanitizedMode) enabled=\(trackpadSwipeToDragEnabled) phase=\(trackpadSwipeDragPhase.rawValue) syntheticButtonDown=\(trackpadSwipeDragSyntheticButtonDown)")
+        recordTrackpadSwipeDiagnostic(
+            event: "settingChanged",
+            reason: reason,
+            details: [
+                "previousMode": previous,
+                "requestedMode": mode,
+                "mode": sanitizedMode,
+                "enabled": String(trackpadSwipeToDragEnabled),
+                "phase": trackpadSwipeDragPhase.rawValue,
+                "syntheticButtonDown": String(trackpadSwipeDragSyntheticButtonDown)
+            ]
+        )
+
+        guard previous != sanitizedMode else { return }
+        cancelTrackpadSwipeDrag(reason: "mode-changed")
+    }
+
     func setReplayKitInputForwardingEnabled(_ enabled: Bool, reason: String) {
         guard Thread.isMainThread else {
             runOnMain("setReplayKitInputForwardingEnabled") { [weak self] in
@@ -805,6 +921,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     }
 
     private func resetLocalPointerStateAfterInputGateClose() {
+        resetTrackpadSwipeDragState(reason: "input-gate-closed")
         mouseButtonState = 0
         isMouseMovementClutched = false
         isRightMousePressed = false
@@ -875,17 +992,36 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         if let logWindow {
             appendLog("[Panel] Reusing existing Bluetooth HID panel")
             refreshSavedDeviceUI()
+            interactiveTutorialOverlay.attach(
+                window: logWindow,
+                prepareButton: prepareButton,
+                chooseIPhoneButton: connectButton,
+                source: "Bluetooth panel reused"
+            )
+            syncInteractiveTutorialPreparationState(reason: "Bluetooth panel reused")
             logWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
         createUI()
+        syncInteractiveTutorialPreparationState(reason: "Bluetooth panel created")
         NSApp.activate(ignoringOtherApps: true)
 
         appendLog("=== Specchio Bluetooth HID ===")
         appendLog("[BTFlow] Consumer pairing panel opened")
         appendLog("[BTFlow] Waiting for user to prepare Bluetooth")
+    }
+
+    private func syncInteractiveTutorialPreparationState(reason: String) {
+        appendLog("[Tutorial] preparation sync reason=\(reason) classicReady=\(classicManagerReady) sdpPublished=\(preparedBluetoothSDPPublished) connected=\(isBluetoothHIDConnected)")
+        guard classicManagerReady && preparedBluetoothSDPPublished else {
+            appendLog("[Tutorial] preparation sync skipped reason=\(reason) branch=not-ready")
+            return
+        }
+        InteractiveTutorialCoordinator.shared.recordBluetoothPrepared(
+            source: "Bluetooth preparation sync: \(reason)"
+        )
     }
 
     private func installPairingNotificationObservers() {
@@ -1217,6 +1353,70 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         sendConsumerControl(bit: bit)
     }
 
+    func performEasyAutoUnlock(passcode: String, source: String) -> EasyAutoUnlockHIDResult {
+        let passcodeCharacters = Array(passcode)
+        appendLog("[EasyAutoUnlock] controller request source=\(source) mainThread=\(Thread.isMainThread) connected=\(isBluetoothHIDConnected) interruptConnected=\(interruptChannel != nil) inputGate=\(replayKitInputForwardingEnabled) passcodeLength=\(passcodeCharacters.count)")
+
+        guard isBluetoothHIDConnected, interruptChannel != nil else {
+            appendLog("[EasyAutoUnlock] controller blocked source=\(source) reason=bluetooth-disconnected connected=\(isBluetoothHIDConnected) interruptConnected=\(interruptChannel != nil)")
+            return .bluetoothDisconnected
+        }
+
+        var mappedPasscode: [(code: UInt8, modifiers: UInt8)] = []
+        var unsupportedCharacters: [Character] = []
+        for character in passcodeCharacters {
+            if let (code, modifiers) = Self.charToHID(character) {
+                mappedPasscode.append((code, modifiers))
+            } else {
+                unsupportedCharacters.append(character)
+            }
+        }
+
+        guard unsupportedCharacters.isEmpty else {
+            appendLog("[EasyAutoUnlock] controller blocked source=\(source) reason=unsupported-characters unsupportedCount=\(unsupportedCharacters.count)")
+            return .unsupportedCharacters(unsupportedCharacters.count)
+        }
+
+        appendLog("[EasyAutoUnlock] controller scheduling source=\(source) homeToFirstReturn=\(EasyAutoUnlockSequenceTiming.homeToFirstReturn) firstReturnToPIN=\(EasyAutoUnlockSequenceTiming.firstReturnToPIN) keyHold=\(EasyAutoUnlockSequenceTiming.keyHoldDuration) keySpacing=\(EasyAutoUnlockSequenceTiming.keySpacing) pinCharacters=\(mappedPasscode.count)")
+
+        sendConsumerControl(
+            bit: 2,
+            source: "EasyAutoUnlock home",
+            bypassInputGate: true
+        )
+
+        scheduleKeyboardUsage(
+            0x28,
+            modifiers: 0x00,
+            source: "EasyAutoUnlock first-return",
+            delay: EasyAutoUnlockSequenceTiming.homeToFirstReturn,
+            bypassInputGate: true
+        )
+
+        var delay = EasyAutoUnlockSequenceTiming.homeToFirstReturn + EasyAutoUnlockSequenceTiming.firstReturnToPIN
+        for (index, key) in mappedPasscode.enumerated() {
+            scheduleKeyboardUsage(
+                key.code,
+                modifiers: key.modifiers,
+                source: "EasyAutoUnlock pin-\(index + 1)",
+                delay: delay,
+                bypassInputGate: true
+            )
+            delay += EasyAutoUnlockSequenceTiming.keySpacing
+        }
+
+        scheduleKeyboardUsage(
+            0x28,
+            modifiers: 0x00,
+            source: "EasyAutoUnlock final-return",
+            delay: delay,
+            bypassInputGate: true
+        )
+
+        appendLog("[EasyAutoUnlock] controller scheduled source=\(source) finalReturnDelay=\(String(format: "%.2f", delay))")
+        return .started
+    }
+
     func sendKeyboardShortcutCommand(
         name: String,
         modifiers: UInt8,
@@ -1417,12 +1617,22 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         logWindow.contentView = cv
         refreshSavedDeviceUI()
+        interactiveTutorialOverlay.attach(
+            window: logWindow,
+            prepareButton: prepareButton,
+            chooseIPhoneButton: connectButton,
+            source: "Bluetooth panel created"
+        )
         logWindow.makeKeyAndOrderFront(nil)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender === logWindow else { return true }
-        appendLog("[Panel] close requested; hiding Bluetooth HID panel for reuse")
+        appendLog("[Panel] close requested; hiding Bluetooth HID panel for reuse connected=\(isBluetoothHIDConnected)")
+        InteractiveTutorialCoordinator.shared.returnToOpenKeyboardPanelIfBluetoothPanelClosed(
+            isBluetoothConnected: isBluetoothHIDConnected,
+            source: "Bluetooth HID panel close button"
+        )
         sender.orderOut(nil)
         return false
     }
@@ -1490,6 +1700,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         UserDefaults.standard.set(normalizedAddress, forKey: "savedDeviceAddress")
         UserDefaults.standard.set(normalizedName.isEmpty ? normalizedAddress : normalizedName, forKey: "savedDeviceName")
         appendLog("[SavedDevice] saved source=\(source) name=\(normalizedName.isEmpty ? normalizedAddress : normalizedName) rawAddress=\(trimmedAddress) address=\(normalizedAddress)")
+        InteractiveTutorialCoordinator.shared.recordSavedBluetoothDevicePresent(
+            source: "Bluetooth saved device \(source)"
+        )
         refreshSavedDeviceUI()
     }
 
@@ -2084,6 +2297,10 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
 
         appendLog("[BTUI] prepareTapped mainThread=\(Thread.isMainThread)")
+        InteractiveTutorialCoordinator.shared.recordTargetAction(
+            .bluetoothPrepareButton,
+            source: "Bluetooth panel Prepare Bluetooth button"
+        )
         statusLabel?.stringValue = "Preparing Bluetooth…"
         statusLabel?.textColor = .controlAccentColor
         instructionLabel?.stringValue = "Keep your iPhone nearby. When preparation finishes, choose your iPhone from the Bluetooth selector."
@@ -2151,6 +2368,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     )
                 }
                 self.connectButton?.isEnabled = self.preparedBluetoothSDPPublished
+                if self.preparedBluetoothSDPPublished {
+                    InteractiveTutorialCoordinator.shared.recordBluetoothPrepared(
+                        source: "Bluetooth central powered on with SDP"
+                    )
+                }
                 self.refreshSavedDeviceUI()
                 if let stabilizingAddress = self.pairingStabilizationAddress,
                    let savedAddress = UserDefaults.standard.string(forKey: "savedDeviceAddress"),
@@ -2416,6 +2638,10 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             return
         }
 
+        InteractiveTutorialCoordinator.shared.recordTargetAction(
+            .bluetoothChooseIPhoneButton,
+            source: "Bluetooth panel Choose iPhone button"
+        )
         pairingCompletedDuringCurrentSelector = nil
         clearSavedDevice(reason: "starting fresh selector flow")
         statusLabel?.stringValue = "Choose your iPhone"
@@ -2486,6 +2712,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     self.statusLabel?.textColor = .controlAccentColor
                 }
                 appendLog("Device selected for reconnection")
+                InteractiveTutorialCoordinator.shared.recordBluetoothSelectorAccepted(
+                    source: "Bluetooth selector accepted device"
+                )
 
                 if let justPairedDevice, addressesMatch(justPairedDevice.address, addr) {
                     appendLog("[BTPrepare] first pairing completed and selected; restart required before HID connect address=\(addr)")
@@ -2543,6 +2772,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         refreshSavedDeviceUI()
 
         appendLog("[BTPrepare] showing restart-required alert after first pairing name=\(name) address=\(address)")
+        InteractiveTutorialCoordinator.shared.recordFirstPairingRestartAlertShown(
+            source: "Bluetooth first pairing restart alert"
+        )
 
         let alert = NSAlert()
         alert.alertStyle = .informational
@@ -2843,18 +3075,21 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         sendConsumerControl(bit: bit)
     }
 
-    private func sendConsumerControl(bit: UInt8) {
+    private func sendConsumerControl(bit: UInt8, source: String = "Consumer", bypassInputGate: Bool = false) {
         guard let channel = interruptChannel else {
-            appendLog("[Consumer] No interrupt channel — not connected")
+            appendLog("[Consumer] \(source) no interrupt channel — not connected")
             return
         }
-        guard canForwardUserHIDInput(source: "Consumer") else {
-            appendLog("[InputGate] Consumer control bit \(bit) ignored because ReplayKit broadcast is not live")
+        guard bypassInputGate || canForwardUserHIDInput(source: source) else {
+            appendLog("[InputGate] \(source) consumer control bit \(bit) ignored because ReplayKit broadcast is not live")
             return
+        }
+        if bypassInputGate {
+            appendLog("[InputGate] \(source) consumer control bypassing ReplayKit gate bit=\(bit) reason=EasyAutoUnlock")
         }
 
         let value: UInt16 = 1 << UInt16(bit)
-        appendLog("[Consumer] Sending consumer control bit \(bit) value=0x\(String(format: "%04X", value))")
+        appendLog("[Consumer] \(source) sending consumer control bit \(bit) value=0x\(String(format: "%04X", value))")
 
         // Press
         var press: [UInt8] = [0xA1, 0x02, UInt8(value & 0xFF), UInt8(value >> 8)]
@@ -2866,7 +3101,10 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         // Release after 50ms (on main thread to avoid concurrent writes)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self else { return }
-            guard self.canForwardUserHIDInput(source: "Consumer release") else { return }
+            guard bypassInputGate || self.canForwardUserHIDInput(source: "\(source) release") else { return }
+            if bypassInputGate {
+                self.appendLog("[InputGate] \(source) release bypassing ReplayKit gate reason=EasyAutoUnlock")
+            }
             guard let channel = self.interruptChannel else { return }
             var release: [UInt8] = [0xA1, 0x02, 0x00, 0x00]
             let releaseResult = channel.writeAsync(&release, length: UInt16(release.count), refcon: nil)
@@ -3010,6 +3248,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         appendLog("[Mouse] Starting relative NSEvent monitor for mouse passthrough")
         appendLog("[Mouse] Input mode clutchEnabled=\(easyMouseClutchModeEnabled)")
+        appendLog("[TrackpadSwipeDrag] mouse monitor starting enabled=\(trackpadSwipeToDragEnabled) mode=\(trackpadSwipeToDragMode) phase=\(trackpadSwipeDragPhase.rawValue)")
         appendLog("[PointerTransport] activeVariant=\(easyPointerSpikeVariant) spikeEnabled=\(easyPointerSpikeEnabled) absoluteMouseReport=\(absolutePointerTransportEnabled) absoluteReportID=\(Self.absolutePointerReportID)")
         if easyMouseClutchModeEnabled {
             appendLog("[Mouse] Movement clutch enabled: hold right mouse button to forward movement; left button clicks only")
@@ -3334,6 +3573,10 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             appendLog("[Mouse] Event #\(mouseEventCount): right UP suppressed locally clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed) movementForwarding=\(self.movementForwardingEnabled) dragInProgress=\(isDragGestureInProgress)")
 
         case .scrollWheel:
+            if handleTrackpadSwipeToDragIfNeeded(event) {
+                return
+            }
+
             let scrollDelta = event.scrollingDeltaY
             guard scrollDelta.isFinite else {
                 appendLog("[Mouse] Event #\(mouseEventCount): scroll ignored because delta is non-finite raw=\(scrollDelta)")
@@ -3355,6 +3598,810 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             }
             break
         }
+    }
+
+    private func handleTrackpadSwipeToDragIfNeeded(_ event: NSEvent) -> Bool {
+        guard trackpadSwipeToDragEnabled else {
+            if trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown {
+                cancelTrackpadSwipeDrag(reason: "setting-disabled-during-scroll")
+                return true
+            }
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "experiment-disabled",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard event.type == .scrollWheel else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "not-scroll-wheel",
+                fallbackWheel: false
+            )
+            return false
+        }
+
+        guard let targetInputWindow else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "missing-target-window",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard event.window === targetInputWindow else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "event-window-mismatch",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard targetInputWindow.isKeyWindow else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "target-window-not-key",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard interruptChannel != nil else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "interrupt-channel-missing",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard replayKitInputForwardingEnabled else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "input-gate-closed",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard event.scrollingDeltaX.isFinite, event.scrollingDeltaY.isFinite else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "non-finite-delta",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        guard let mapping = pointerInputMapping(for: event) else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "outside-video-surface",
+                fallbackWheel: true
+            )
+            return false
+        }
+
+        recordTrackpadSwipeDiagnostic(
+            event: "eventReceived",
+            reason: "scroll-wheel",
+            sourceEvent: event,
+            mapping: mapping
+        )
+
+        guard event.hasPreciseScrollingDeltas else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "not-precise-scroll-deltas",
+                fallbackWheel: true,
+                mapping: mapping
+            )
+            return false
+        }
+
+        if !event.momentumPhase.isEmpty {
+            let hadActiveGesture = trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown
+            if hadActiveGesture {
+                finishTrackpadSwipeDrag(
+                    event: event,
+                    mapping: mapping,
+                    reason: "momentum-phase-started",
+                    cancelled: true
+                )
+                return true
+            }
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "momentum-without-active-gesture",
+                fallbackWheel: true,
+                mapping: mapping
+            )
+            return false
+        }
+
+        let phase = event.phase
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            let hadActiveGesture = trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown
+            guard hadActiveGesture else {
+                rejectTrackpadSwipeToDrag(
+                    event: event,
+                    reason: "phase-ended-without-active-gesture",
+                    fallbackWheel: false,
+                    mapping: mapping
+                )
+                return false
+            }
+            if trackpadSwipeToDragMode == AppSettings.EasyTrackpadSwipeToDragMode.delayed {
+                finishDelayedTrackpadSwipeDrag(
+                    event: event,
+                    mapping: mapping,
+                    reason: phase.contains(.cancelled) ? "phase-cancelled" : "phase-ended",
+                    cancelled: phase.contains(.cancelled)
+                )
+                return true
+            }
+            finishTrackpadSwipeDrag(
+                event: event,
+                mapping: mapping,
+                reason: phase.contains(.cancelled) ? "phase-cancelled" : "phase-ended",
+                cancelled: phase.contains(.cancelled)
+            )
+            return true
+        }
+
+        if phase.contains(.began) || phase.contains(.mayBegin) {
+            if trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown {
+                finishTrackpadSwipeDrag(
+                    event: event,
+                    mapping: mapping,
+                    reason: "new-phase-began",
+                    cancelled: true
+                )
+            }
+            startTrackpadSwipeEvaluation(event: event, mapping: mapping, reason: trackpadEventPhaseDescription(phase))
+        } else if trackpadSwipeDragPhase == .idle {
+            startTrackpadSwipeEvaluation(
+                event: event,
+                mapping: mapping,
+                reason: phase.isEmpty ? "empty-phase-fallback" : "changed-without-began"
+            )
+        }
+
+        trackpadSwipeDragEventCount += 1
+        trackpadSwipeDragLastEventUptime = ProcessInfo.processInfo.systemUptime
+        trackpadSwipeDragAccumulatedHorizontalDelta += event.scrollingDeltaX
+        trackpadSwipeDragAccumulatedVerticalDelta += event.scrollingDeltaY
+
+        let absHorizontal = abs(trackpadSwipeDragAccumulatedHorizontalDelta)
+        let absVertical = abs(trackpadSwipeDragAccumulatedVerticalDelta)
+        let horizontalDominates = absHorizontal >= absVertical * TrackpadSwipeDragMetrics.horizontalDominanceRatio
+        let hasCommitDistance = absHorizontal >= TrackpadSwipeDragMetrics.minimumHorizontalCommitDelta
+
+        guard absHorizontal >= absVertical else {
+            rejectActiveTrackpadSwipeEvaluation(
+                event: event,
+                mapping: mapping,
+                reason: "vertical-dominant",
+                fallbackWheel: true,
+                details: [
+                    "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                    "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2)
+                ]
+            )
+            return false
+        }
+
+        switch trackpadSwipeDragPhase {
+        case .idle:
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "unexpected-idle-after-evaluation",
+                fallbackWheel: true,
+                mapping: mapping
+            )
+            return false
+
+        case .evaluating:
+            guard hasCommitDistance else {
+                recordTrackpadSwipeDiagnostic(
+                    event: "evaluationStarted",
+                    reason: "waiting-for-horizontal-threshold",
+                    sourceEvent: event,
+                    mapping: mapping,
+                    details: [
+                        "minimumHorizontalCommitDelta": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.minimumHorizontalCommitDelta), digits: 2),
+                        "horizontalDominates": String(horizontalDominates),
+                        "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                        "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2)
+                    ]
+                )
+                return true
+            }
+
+            guard horizontalDominates else {
+                rejectActiveTrackpadSwipeEvaluation(
+                    event: event,
+                    mapping: mapping,
+                    reason: "horizontal-dominance-threshold-not-met",
+                    fallbackWheel: true,
+                    details: [
+                        "horizontalDominanceRatio": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.horizontalDominanceRatio), digits: 2),
+                        "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                        "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2)
+                    ]
+                )
+                return false
+            }
+
+            if trackpadSwipeToDragMode == AppSettings.EasyTrackpadSwipeToDragMode.delayed {
+                markDelayedTrackpadSwipeReady(event: event, mapping: mapping)
+                return true
+            }
+
+            commitTrackpadSwipeDrag(event: event, mapping: mapping)
+            return true
+
+        case .delayedReady:
+            guard horizontalDominates else {
+                rejectActiveTrackpadSwipeEvaluation(
+                    event: event,
+                    mapping: mapping,
+                    reason: "delayed-horizontal-dominance-lost",
+                    fallbackWheel: false,
+                    details: [
+                        "horizontalDominanceRatio": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.horizontalDominanceRatio), digits: 2),
+                        "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                        "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2)
+                    ]
+                )
+                return true
+            }
+            recordTrackpadSwipeDiagnostic(
+                event: "delayedGestureReady",
+                reason: "waiting-for-phase-ended",
+                sourceEvent: event,
+                mapping: mapping,
+                details: trackpadSwipeTargetDetails(trackpadSwipeDelayedEndPoint() ?? mapping.phonePoint)
+            )
+            return true
+
+        case .dragging:
+            moveTrackpadSwipeDrag(event: event, mapping: mapping)
+            return true
+        }
+    }
+
+    private func startTrackpadSwipeEvaluation(event: NSEvent, mapping: PointerInputMapping, reason: String) {
+        trackpadSwipeDragGestureID += 1
+        trackpadSwipeDragPhase = .evaluating
+        trackpadSwipeDragStartPhonePoint = mapping.phonePoint
+        trackpadSwipeDragLatestPhonePoint = mapping.phonePoint
+        trackpadSwipeDragAccumulatedHorizontalDelta = 0
+        trackpadSwipeDragAccumulatedVerticalDelta = 0
+        trackpadSwipeDragEventCount = 0
+        trackpadSwipeDragMoveCount = 0
+        trackpadSwipeDragStartUptime = ProcessInfo.processInfo.systemUptime
+        trackpadSwipeDragLastEventUptime = trackpadSwipeDragStartUptime
+        trackpadSwipeDragSyntheticButtonDown = false
+        appendLog("[TrackpadSwipeDrag] evaluation started gesture=\(trackpadSwipeDragGestureID) reason=\(reason) start=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) phase=\(trackpadEventPhaseDescription(event.phase))")
+        recordTrackpadSwipeDiagnostic(
+            event: "evaluationStarted",
+            reason: reason,
+            sourceEvent: event,
+            mapping: mapping,
+            details: [
+                "minimumHorizontalCommitDelta": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.minimumHorizontalCommitDelta), digits: 2),
+                "horizontalDominanceRatio": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.horizontalDominanceRatio), digits: 2),
+                "dragScale": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.dragScale), digits: 2),
+                "directionMultiplier": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.directionMultiplier), digits: 2)
+            ]
+        )
+    }
+
+    private func commitTrackpadSwipeDrag(event: NSEvent, mapping: PointerInputMapping) {
+        guard let direction = trackpadSwipeResolvedDirection() else {
+            rejectTrackpadSwipeToDrag(
+                event: event,
+                reason: "missing-direction-on-live-commit",
+                fallbackWheel: true,
+                mapping: mapping
+            )
+            return
+        }
+        let anchors = trackpadSwipeAnchorPoints(for: direction)
+        let startPoint = anchors.start
+        trackpadSwipeDragStartPhonePoint = startPoint
+        trackpadSwipeDragLatestPhonePoint = startPoint
+
+        let targetPoint = trackpadSwipeTargetPoint() ?? mapping.phonePoint
+        appendLog("[TrackpadSwipeDrag] committed gesture=\(trackpadSwipeDragGestureID) mode=\(trackpadSwipeToDragMode) direction=\(direction.rawValue) accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta)) anchorStart=\(InputSurfaceDiagnostics.pointString(startPoint)) target=\(InputSurfaceDiagnostics.pointString(targetPoint)) anchorEnd=\(InputSurfaceDiagnostics.pointString(anchors.end)) rotation=\(inputSurfaceRotationDegrees)")
+        recordTrackpadSwipeDiagnostic(
+            event: "gestureCommitted",
+            reason: "live-horizontal-threshold-met",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(targetPoint)
+        )
+
+        beginPointerInteraction(at: startPoint)
+        trackpadSwipeDragSyntheticButtonDown = true
+        trackpadSwipeDragPhase = .dragging
+        recordTrackpadSwipeDiagnostic(
+            event: "dragStarted",
+            reason: "synthetic-button-down",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(targetPoint)
+        )
+
+        trackpadSwipeDragLatestPhonePoint = targetPoint
+        trackpadSwipeDragMoveCount += 1
+        dragPointer(to: targetPoint)
+        recordTrackpadSwipeDiagnostic(
+            event: "dragMoved",
+            reason: "commit-initial-move",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(targetPoint)
+        )
+    }
+
+    private func moveTrackpadSwipeDrag(event: NSEvent, mapping: PointerInputMapping) {
+        let targetPoint = trackpadSwipeTargetPoint() ?? mapping.phonePoint
+        trackpadSwipeDragLatestPhonePoint = targetPoint
+        trackpadSwipeDragMoveCount += 1
+        appendLog("[TrackpadSwipeDrag] move gesture=\(trackpadSwipeDragGestureID) move=\(trackpadSwipeDragMoveCount) rawDelta=(\(event.scrollingDeltaX),\(event.scrollingDeltaY)) accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta)) target=\(InputSurfaceDiagnostics.pointString(targetPoint))")
+        dragPointer(to: targetPoint)
+        recordTrackpadSwipeDiagnostic(
+            event: "dragMoved",
+            reason: "phase-changed",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(targetPoint)
+        )
+    }
+
+    private func markDelayedTrackpadSwipeReady(event: NSEvent, mapping: PointerInputMapping) {
+        guard let direction = trackpadSwipeResolvedDirection() else {
+            rejectActiveTrackpadSwipeEvaluation(
+                event: event,
+                mapping: mapping,
+                reason: "missing-direction-on-delayed-ready",
+                fallbackWheel: false
+            )
+            return
+        }
+
+        let anchors = trackpadSwipeAnchorPoints(for: direction)
+        trackpadSwipeDragPhase = .delayedReady
+        trackpadSwipeDragStartPhonePoint = anchors.start
+        trackpadSwipeDragLatestPhonePoint = anchors.start
+        appendLog("[TrackpadSwipeDrag] delayed ready gesture=\(trackpadSwipeDragGestureID) direction=\(direction.rawValue) accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta)) anchorStart=\(InputSurfaceDiagnostics.pointString(anchors.start)) anchorEnd=\(InputSurfaceDiagnostics.pointString(anchors.end))")
+        recordTrackpadSwipeDiagnostic(
+            event: "delayedGestureReady",
+            reason: "horizontal-threshold-met",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(anchors.end)
+        )
+    }
+
+    private func finishDelayedTrackpadSwipeDrag(
+        event: NSEvent?,
+        mapping: PointerInputMapping?,
+        reason: String,
+        cancelled: Bool
+    ) {
+        let absHorizontal = abs(trackpadSwipeDragAccumulatedHorizontalDelta)
+        let absVertical = abs(trackpadSwipeDragAccumulatedVerticalDelta)
+        let horizontalDominates = absHorizontal >= absVertical * TrackpadSwipeDragMetrics.horizontalDominanceRatio
+        let hasCommitDistance = absHorizontal >= TrackpadSwipeDragMetrics.minimumHorizontalCommitDelta
+
+        if cancelled {
+            appendLog("[TrackpadSwipeDrag] delayed cancelled gesture=\(trackpadSwipeDragGestureID) reason=\(reason) accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta))")
+            recordTrackpadSwipeDiagnostic(
+                event: "dragCancelled",
+                reason: "delayed-\(reason)",
+                sourceEvent: event,
+                mapping: mapping,
+                details: [
+                    "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                    "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2),
+                    "hasCommitDistance": String(hasCommitDistance),
+                    "horizontalDominates": String(horizontalDominates)
+                ]
+            )
+            resetTrackpadSwipeDragState(reason: "delayed-\(reason)")
+            return
+        }
+
+        guard hasCommitDistance else {
+            appendLog("[TrackpadSwipeDrag] delayed rejected gesture=\(trackpadSwipeDragGestureID) reason=ended-before-threshold absHorizontal=\(absHorizontal) absVertical=\(absVertical)")
+            recordTrackpadSwipeDiagnostic(
+                event: "guardRejected",
+                reason: "delayed-ended-before-threshold",
+                sourceEvent: event,
+                mapping: mapping,
+                details: [
+                    "minimumHorizontalCommitDelta": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.minimumHorizontalCommitDelta), digits: 2),
+                    "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                    "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2),
+                    "fallbackWheel": "false"
+                ],
+                severity: "info"
+            )
+            resetTrackpadSwipeDragState(reason: "delayed-ended-before-threshold")
+            return
+        }
+
+        guard horizontalDominates else {
+            appendLog("[TrackpadSwipeDrag] delayed rejected gesture=\(trackpadSwipeDragGestureID) reason=dominance-not-met absHorizontal=\(absHorizontal) absVertical=\(absVertical)")
+            recordTrackpadSwipeDiagnostic(
+                event: "guardRejected",
+                reason: "delayed-horizontal-dominance-threshold-not-met",
+                sourceEvent: event,
+                mapping: mapping,
+                details: [
+                    "horizontalDominanceRatio": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.horizontalDominanceRatio), digits: 2),
+                    "absHorizontal": FrameDropDiagnostics.format(Double(absHorizontal), digits: 2),
+                    "absVertical": FrameDropDiagnostics.format(Double(absVertical), digits: 2),
+                    "fallbackWheel": "false"
+                ],
+                severity: "info"
+            )
+            resetTrackpadSwipeDragState(reason: "delayed-horizontal-dominance-threshold-not-met")
+            return
+        }
+
+        guard let direction = trackpadSwipeResolvedDirection() else {
+            appendLog("[TrackpadSwipeDrag] delayed rejected gesture=\(trackpadSwipeDragGestureID) reason=missing-direction accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta))")
+            recordTrackpadSwipeDiagnostic(
+                event: "guardRejected",
+                reason: "delayed-missing-direction",
+                sourceEvent: event,
+                mapping: mapping,
+                details: ["fallbackWheel": "false"],
+                severity: "warning"
+            )
+            resetTrackpadSwipeDragState(reason: "delayed-missing-direction")
+            return
+        }
+
+        let anchors = trackpadSwipeAnchorPoints(for: direction)
+        trackpadSwipeDragPhase = .dragging
+        trackpadSwipeDragStartPhonePoint = anchors.start
+        trackpadSwipeDragLatestPhonePoint = anchors.start
+        appendLog("[TrackpadSwipeDrag] delayed committed gesture=\(trackpadSwipeDragGestureID) direction=\(direction.rawValue) start=\(InputSurfaceDiagnostics.pointString(anchors.start)) end=\(InputSurfaceDiagnostics.pointString(anchors.end)) accumulated=(\(trackpadSwipeDragAccumulatedHorizontalDelta),\(trackpadSwipeDragAccumulatedVerticalDelta))")
+        recordTrackpadSwipeDiagnostic(
+            event: "gestureCommitted",
+            reason: "delayed-phase-ended",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(anchors.end)
+        )
+
+        beginPointerInteraction(at: anchors.start)
+        trackpadSwipeDragSyntheticButtonDown = true
+        recordTrackpadSwipeDiagnostic(
+            event: "dragStarted",
+            reason: "delayed-synthetic-button-down",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(anchors.end)
+        )
+
+        trackpadSwipeDragMoveCount += 1
+        trackpadSwipeDragLatestPhonePoint = anchors.end
+        dragPointer(to: anchors.end)
+        recordTrackpadSwipeDiagnostic(
+            event: "dragMoved",
+            reason: "delayed-anchor-to-anchor",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(anchors.end)
+        )
+
+        endPointerInteraction(at: anchors.end, click: false)
+        trackpadSwipeDragSyntheticButtonDown = false
+        recordTrackpadSwipeDiagnostic(
+            event: "dragEnded",
+            reason: "delayed-anchor-to-anchor",
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(anchors.end).merging(
+                [
+                    "buttonUpSent": "true",
+                    "moveCount": String(trackpadSwipeDragMoveCount)
+                ],
+                uniquingKeysWith: { current, _ in current }
+            )
+        )
+        moveTrackpadSwipePointerToNeutral(reason: "delayed-anchor-to-anchor")
+        resetTrackpadSwipeDragState(reason: "delayed-anchor-to-anchor")
+    }
+
+    private func finishTrackpadSwipeDrag(
+        event: NSEvent?,
+        mapping: PointerInputMapping?,
+        reason: String,
+        cancelled: Bool
+    ) {
+        let targetPoint = trackpadSwipeDragLatestPhonePoint
+            ?? trackpadSwipeTargetPoint()
+            ?? mapping?.phonePoint
+            ?? trackpadSwipeDragStartPhonePoint
+            ?? virtualPointerPoint
+        let hadSyntheticButtonDown = trackpadSwipeDragSyntheticButtonDown
+        appendLog("[TrackpadSwipeDrag] \(cancelled ? "cancel" : "end") gesture=\(trackpadSwipeDragGestureID) reason=\(reason) phase=\(trackpadSwipeDragPhase.rawValue) buttonDown=\(hadSyntheticButtonDown) target=\(InputSurfaceDiagnostics.pointString(targetPoint)) moves=\(trackpadSwipeDragMoveCount)")
+        if hadSyntheticButtonDown {
+            endPointerInteraction(at: targetPoint, click: false)
+        }
+        recordTrackpadSwipeDiagnostic(
+            event: cancelled ? "dragCancelled" : "dragEnded",
+            reason: reason,
+            sourceEvent: event,
+            mapping: mapping,
+            details: trackpadSwipeTargetDetails(targetPoint).merging(
+                [
+                    "buttonUpSent": String(hadSyntheticButtonDown),
+                    "moveCount": String(trackpadSwipeDragMoveCount)
+                ],
+                uniquingKeysWith: { current, _ in current }
+            )
+        )
+        if hadSyntheticButtonDown, !cancelled {
+            moveTrackpadSwipePointerToNeutral(reason: reason)
+        }
+        resetTrackpadSwipeDragState(reason: reason)
+    }
+
+    private func cancelTrackpadSwipeDrag(reason: String) {
+        guard trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown else {
+            resetTrackpadSwipeDragState(reason: reason)
+            return
+        }
+        finishTrackpadSwipeDrag(
+            event: nil,
+            mapping: nil,
+            reason: reason,
+            cancelled: true
+        )
+    }
+
+    private func rejectActiveTrackpadSwipeEvaluation(
+        event: NSEvent,
+        mapping: PointerInputMapping,
+        reason: String,
+        fallbackWheel: Bool,
+        details: [String: String] = [:]
+    ) {
+        rejectTrackpadSwipeToDrag(
+            event: event,
+            reason: reason,
+            fallbackWheel: fallbackWheel,
+            mapping: mapping,
+            details: details
+        )
+        resetTrackpadSwipeDragState(reason: reason)
+    }
+
+    private func rejectTrackpadSwipeToDrag(
+        event: NSEvent,
+        reason: String,
+        fallbackWheel: Bool,
+        mapping: PointerInputMapping? = nil,
+        details: [String: String] = [:]
+    ) {
+        appendLog("[TrackpadSwipeDrag] rejected reason=\(reason) fallbackWheel=\(fallbackWheel) enabled=\(trackpadSwipeToDragEnabled) mode=\(trackpadSwipeToDragMode) phase=\(trackpadSwipeDragPhase.rawValue) precise=\(event.hasPreciseScrollingDeltas) phase=\(trackpadEventPhaseDescription(event.phase)) momentum=\(trackpadEventPhaseDescription(event.momentumPhase)) rawDelta=(\(event.scrollingDeltaX),\(event.scrollingDeltaY))")
+        recordTrackpadSwipeDiagnostic(
+            event: "guardRejected",
+            reason: reason,
+            sourceEvent: event,
+            mapping: mapping,
+            details: details.merging(["fallbackWheel": String(fallbackWheel)], uniquingKeysWith: { current, _ in current }),
+            severity: fallbackWheel ? "info" : "warning"
+        )
+        if fallbackWheel {
+            recordTrackpadSwipeDiagnostic(
+                event: "fallbackWheel",
+                reason: reason,
+                sourceEvent: event,
+                mapping: mapping,
+                details: details
+            )
+        }
+    }
+
+    private func resetTrackpadSwipeDragState(reason: String) {
+        if trackpadSwipeDragPhase != .idle || trackpadSwipeDragSyntheticButtonDown {
+            appendLog("[TrackpadSwipeDrag] reset reason=\(reason) previousPhase=\(trackpadSwipeDragPhase.rawValue) syntheticButtonDown=\(trackpadSwipeDragSyntheticButtonDown)")
+        }
+        trackpadSwipeDragPhase = .idle
+        trackpadSwipeDragStartPhonePoint = nil
+        trackpadSwipeDragLatestPhonePoint = nil
+        trackpadSwipeDragAccumulatedHorizontalDelta = 0
+        trackpadSwipeDragAccumulatedVerticalDelta = 0
+        trackpadSwipeDragEventCount = 0
+        trackpadSwipeDragMoveCount = 0
+        trackpadSwipeDragStartUptime = 0
+        trackpadSwipeDragLastEventUptime = 0
+        trackpadSwipeDragSyntheticButtonDown = false
+    }
+
+    private func trackpadSwipeScaledHorizontalDelta() -> CGFloat {
+        trackpadSwipeDragAccumulatedHorizontalDelta
+            * TrackpadSwipeDragMetrics.dragScale
+            * TrackpadSwipeDragMetrics.directionMultiplier
+    }
+
+    private func trackpadSwipeResolvedDirection() -> TrackpadSwipeDragDirection? {
+        let scaledHorizontal = trackpadSwipeScaledHorizontalDelta()
+        guard scaledHorizontal.isFinite, scaledHorizontal != 0 else { return nil }
+        return scaledHorizontal < 0 ? .left : .right
+    }
+
+    private func trackpadSwipeAnchorPoints(for direction: TrackpadSwipeDragDirection) -> (start: CGPoint, end: CGPoint, neutral: CGPoint) {
+        guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
+            let fallback = clampPhonePointToSurface(virtualPointerPoint)
+            appendLog("[TrackpadSwipeDrag] anchor fallback direction=\(direction.rawValue) invalidSurface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) fallback=\(InputSurfaceDiagnostics.pointString(fallback))")
+            return (start: fallback, end: fallback, neutral: fallback)
+        }
+
+        let neutral = CGPoint(x: pointerSurfaceSize.width / 2, y: pointerSurfaceSize.height / 2)
+        let halfSwipeDistance = pointerSurfaceSize.width * TrackpadSwipeDragMetrics.maximumSyntheticDragFractionOfSurface / 2
+        let leftAnchor = clampPhonePointToSurface(CGPoint(x: neutral.x - halfSwipeDistance, y: neutral.y))
+        let rightAnchor = clampPhonePointToSurface(CGPoint(x: neutral.x + halfSwipeDistance, y: neutral.y))
+        let neutralAnchor = clampPhonePointToSurface(neutral)
+
+        switch direction {
+        case .left:
+            return (start: rightAnchor, end: leftAnchor, neutral: neutralAnchor)
+        case .right:
+            return (start: leftAnchor, end: rightAnchor, neutral: neutralAnchor)
+        }
+    }
+
+    private func trackpadSwipeDelayedEndPoint() -> CGPoint? {
+        guard let direction = trackpadSwipeResolvedDirection() else { return nil }
+        return trackpadSwipeAnchorPoints(for: direction).end
+    }
+
+    private func trackpadSwipeNeutralPoint() -> CGPoint {
+        if let direction = trackpadSwipeResolvedDirection() {
+            return trackpadSwipeAnchorPoints(for: direction).neutral
+        }
+        guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
+            return clampPhonePointToSurface(virtualPointerPoint)
+        }
+        return clampPhonePointToSurface(CGPoint(x: pointerSurfaceSize.width / 2, y: pointerSurfaceSize.height / 2))
+    }
+
+    private func moveTrackpadSwipePointerToNeutral(reason: String) {
+        let neutralPoint = trackpadSwipeNeutralPoint()
+        appendLog("[TrackpadSwipeDrag] neutralize reason=\(reason) point=\(InputSurfaceDiagnostics.pointString(neutralPoint)) mode=\(trackpadSwipeToDragMode)")
+        recordTrackpadSwipeDiagnostic(
+            event: "pointerNeutralized",
+            reason: reason,
+            details: ["neutralPoint": InputSurfaceDiagnostics.pointString(neutralPoint)]
+        )
+        movePointer(to: neutralPoint, reason: "trackpad-swipe-neutral:\(reason)")
+    }
+
+    private func trackpadSwipeTargetPoint() -> CGPoint? {
+        guard let startPoint = trackpadSwipeDragStartPhonePoint else { return nil }
+        guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0 else {
+            return clampPhonePointToSurface(startPoint)
+        }
+        let maximumDistance = pointerSurfaceSize.width * TrackpadSwipeDragMetrics.maximumSyntheticDragFractionOfSurface
+        let scaledHorizontal = trackpadSwipeScaledHorizontalDelta()
+        let clampedHorizontal = min(max(scaledHorizontal, -maximumDistance), maximumDistance)
+        return clampPhonePointToSurface(
+            CGPoint(
+                x: startPoint.x + clampedHorizontal,
+                y: startPoint.y
+            )
+        )
+    }
+
+    private func trackpadSwipeTargetDetails(_ targetPoint: CGPoint) -> [String: String] {
+        var details: [String: String] = [
+            "mode": trackpadSwipeToDragMode,
+            "targetPhonePoint": InputSurfaceDiagnostics.pointString(targetPoint),
+            "scaledHorizontalDelta": FrameDropDiagnostics.format(Double(trackpadSwipeScaledHorizontalDelta()), digits: 2),
+            "maximumSyntheticDragFractionOfSurface": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.maximumSyntheticDragFractionOfSurface), digits: 2),
+            "dragScale": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.dragScale), digits: 2),
+            "directionMultiplier": FrameDropDiagnostics.format(Double(TrackpadSwipeDragMetrics.directionMultiplier), digits: 2)
+        ]
+        if let direction = trackpadSwipeResolvedDirection() {
+            let anchors = trackpadSwipeAnchorPoints(for: direction)
+            details["resolvedDirection"] = direction.rawValue
+            details["anchorStartPoint"] = InputSurfaceDiagnostics.pointString(anchors.start)
+            details["anchorEndPoint"] = InputSurfaceDiagnostics.pointString(anchors.end)
+            details["neutralPoint"] = InputSurfaceDiagnostics.pointString(anchors.neutral)
+        } else {
+            details["resolvedDirection"] = "nil"
+            details["neutralPoint"] = InputSurfaceDiagnostics.pointString(trackpadSwipeNeutralPoint())
+        }
+        return details
+    }
+
+    private func recordTrackpadSwipeDiagnostic(
+        event: String,
+        reason: String,
+        sourceEvent: NSEvent? = nil,
+        mapping: PointerInputMapping? = nil,
+        details: [String: String] = [:],
+        severity: String = "info"
+    ) {
+        var merged: [String: String] = [
+            "enabled": String(trackpadSwipeToDragEnabled),
+            "mode": trackpadSwipeToDragMode,
+            "phase": trackpadSwipeDragPhase.rawValue,
+            "gestureID": String(trackpadSwipeDragGestureID),
+            "eventCount": String(trackpadSwipeDragEventCount),
+            "moveCount": String(trackpadSwipeDragMoveCount),
+            "syntheticButtonDown": String(trackpadSwipeDragSyntheticButtonDown),
+            "accumulatedX": FrameDropDiagnostics.format(Double(trackpadSwipeDragAccumulatedHorizontalDelta), digits: 2),
+            "accumulatedY": FrameDropDiagnostics.format(Double(trackpadSwipeDragAccumulatedVerticalDelta), digits: 2),
+            "inputGateEnabled": String(replayKitInputForwardingEnabled),
+            "inputGateReason": replayKitInputForwardingReason,
+            "interruptConnected": String(interruptChannel != nil),
+            "mousePassthroughEnabled": String(mousePassthroughEnabled),
+            "targetWindow": targetInputWindow.map { String($0.windowNumber) } ?? "nil",
+            "targetWindowKey": targetInputWindow.map { String($0.isKeyWindow) } ?? "nil",
+            "inputSurfaceFrame": inputSurfaceFrameInWindow.map(InputSurfaceDiagnostics.rectString) ?? "nil",
+            "phoneSurfaceSize": InputSurfaceDiagnostics.sizeString(pointerSurfaceSize),
+            "displayRotation": String(inputSurfaceRotationDegrees),
+            "startPhonePoint": trackpadSwipeDragStartPhonePoint.map(InputSurfaceDiagnostics.pointString) ?? "nil",
+            "latestPhonePoint": trackpadSwipeDragLatestPhonePoint.map(InputSurfaceDiagnostics.pointString) ?? "nil"
+        ]
+
+        if let sourceEvent {
+            merged["eventType"] = String(sourceEvent.type.rawValue)
+            merged["eventWindow"] = sourceEvent.window.map { String($0.windowNumber) } ?? "nil"
+            merged["eventPhase"] = trackpadEventPhaseDescription(sourceEvent.phase)
+            merged["momentumPhase"] = trackpadEventPhaseDescription(sourceEvent.momentumPhase)
+            merged["hasPreciseDeltas"] = String(sourceEvent.hasPreciseScrollingDeltas)
+            merged["rawDeltaX"] = FrameDropDiagnostics.format(Double(sourceEvent.scrollingDeltaX), digits: 2)
+            merged["rawDeltaY"] = FrameDropDiagnostics.format(Double(sourceEvent.scrollingDeltaY), digits: 2)
+            merged["eventLocationInWindow"] = InputSurfaceDiagnostics.pointString(sourceEvent.locationInWindow)
+        }
+
+        if let mapping {
+            merged["mappedEventLocation"] = InputSurfaceDiagnostics.pointString(mapping.eventLocationInWindow)
+            merged["mappedLocalPoint"] = InputSurfaceDiagnostics.pointString(mapping.localPoint)
+            merged["mappedPhonePoint"] = InputSurfaceDiagnostics.pointString(mapping.phonePoint)
+            merged["mappedSurfaceFrame"] = InputSurfaceDiagnostics.rectString(mapping.surfaceFrameInWindow)
+            merged["mappedWasClamped"] = String(mapping.wasClampedToSurface)
+        }
+
+        for (key, value) in details {
+            merged[key] = value
+        }
+
+        FrameDropDiagnostics.shared.recordLifecycle(
+            source: "easyTrackpadGesture",
+            event: event,
+            reason: reason,
+            details: merged,
+            severity: severity
+        )
+    }
+
+    private func trackpadEventPhaseDescription(_ phase: NSEvent.Phase) -> String {
+        guard !phase.isEmpty else { return "none" }
+        var parts: [String] = []
+        if phase.contains(.mayBegin) { parts.append("mayBegin") }
+        if phase.contains(.began) { parts.append("began") }
+        if phase.contains(.stationary) { parts.append("stationary") }
+        if phase.contains(.changed) { parts.append("changed") }
+        if phase.contains(.ended) { parts.append("ended") }
+        if phase.contains(.cancelled) { parts.append("cancelled") }
+        return parts.isEmpty ? "unknown(\(phase.rawValue))" : parts.joined(separator: "|")
     }
 
     private func beginAbsoluteLeftDragIfNeeded(mapping: PointerInputMapping, trigger: String) {
@@ -4417,15 +5464,49 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         _ = writeKeyboardReport(modifiers: modifiers, keys: keys, source: "KeyboardReport")
     }
 
+    private func scheduleKeyboardUsage(
+        _ keyCode: UInt8,
+        modifiers: UInt8,
+        source: String,
+        delay: TimeInterval,
+        bypassInputGate: Bool
+    ) {
+        appendLog("[EasyAutoUnlock] schedule keyboard usage source=\(source) delay=\(String(format: "%.2f", delay)) key=0x\(String(format: "%02X", keyCode)) modifiers=0x\(String(format: "%02X", modifiers)) bypass=\(bypassInputGate)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            let pressed = self.writeKeyboardReport(
+                modifiers: modifiers,
+                keys: [keyCode],
+                source: "\(source) press",
+                bypassInputGate: bypassInputGate
+            )
+            self.appendLog("[EasyAutoUnlock] keyboard press source=\(source) result=\(pressed)")
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + EasyAutoUnlockSequenceTiming.keyHoldDuration) { [weak self] in
+                guard let self else { return }
+                let released = self.writeKeyboardReport(
+                    modifiers: 0x00,
+                    keys: [],
+                    source: "\(source) release",
+                    bypassInputGate: bypassInputGate
+                )
+                self.appendLog("[EasyAutoUnlock] keyboard release source=\(source) result=\(released)")
+            }
+        }
+    }
+
     @discardableResult
-    private func writeKeyboardReport(modifiers: UInt8, keys: [UInt8], source: String) -> Bool {
+    private func writeKeyboardReport(modifiers: UInt8, keys: [UInt8], source: String, bypassInputGate: Bool = false) -> Bool {
         guard let channel = interruptChannel else {
             appendLog("[KeyboardReport] \(source) ignored: no interrupt channel modifiers=0x\(String(format: "%02X", modifiers)) keys=\(Self.hidKeyListDescription(keys))")
             return false
         }
-        guard canForwardUserHIDInput(source: source) else {
+        guard bypassInputGate || canForwardUserHIDInput(source: source) else {
             appendLog("[InputGate] \(source) keyboard report ignored modifiers=0x\(String(format: "%02X", modifiers)) keys=\(Self.hidKeyListDescription(keys))")
             return false
+        }
+        if bypassInputGate {
+            appendLog("[InputGate] \(source) keyboard report bypassing ReplayKit gate reason=EasyAutoUnlock modifiers=0x\(String(format: "%02X", modifiers)) keys=\(Self.hidKeyListDescription(keys))")
         }
 
         let reportKeys = Array(keys.prefix(6))

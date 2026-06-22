@@ -106,6 +106,22 @@ final class FrameDropDiagnostics {
         String(format: "%.\(digits)f", value)
     }
 
+    static func recentLines(containing needle: String, limit: Int) -> [String] {
+        guard limit > 0, !needle.isEmpty else { return [] }
+        guard let contents = try? String(contentsOf: latestLogURL, encoding: .utf8) else {
+            return []
+        }
+
+        return contents
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .reversed()
+            .lazy
+            .filter { $0.contains(needle) }
+            .prefix(limit)
+            .map(String.init)
+            .reversed()
+    }
+
     private func record(
         event: String,
         source: String,
