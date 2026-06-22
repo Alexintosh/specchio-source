@@ -112,11 +112,210 @@ private struct EasyVideoSourceCardState: Identifiable {
     }
 }
 
+private enum EasyAutomationToolbarMetrics {
+    static let buttonSide: CGFloat = 24
+    static let iconSide: CGFloat = 15
+    static let indicatorSide: CGFloat = 7
+    static let horizontalPadding: CGFloat = 8
+    static let verticalPadding: CGFloat = 6
+    static let spacing: CGFloat = 7
+    static let cornerRadius: CGFloat = 8
+}
+
+private struct EasyAutomationToolbar: View {
+    @ObservedObject var recorder: EasyAutomationRecorder
+    @ObservedObject var replayEngine: EasyAutomationReplayEngine
+    @ObservedObject var agentEndpointServer: EasyAgentEndpointServer
+    let hasFrame: Bool
+    let agentEndpointEnabled: Bool
+    let toggleRecording: () -> Void
+    let refreshSessions: () -> Void
+    let playSession: (EasyAutomationReplaySessionSummary, Bool) -> Void
+    let stopReplay: () -> Void
+    let toggleAgentEndpoint: () -> Void
+
+    var body: some View {
+        HStack(spacing: EasyAutomationToolbarMetrics.spacing) {
+            Button {
+                toggleRecording()
+            } label: {
+                Image(systemName: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+                    .font(.system(size: EasyAutomationToolbarMetrics.iconSide, weight: .semibold))
+                    .frame(
+                        width: EasyAutomationToolbarMetrics.buttonSide,
+                        height: EasyAutomationToolbarMetrics.buttonSide
+                    )
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(recorder.isRecording ? Color.red : Color.primary)
+            .help(recorder.isRecording ? "Stop automation recording" : "Record automation")
+            .accessibilityLabel(recorder.isRecording ? "Stop automation recording" : "Record automation")
+
+            if recorder.isRecording {
+                Circle()
+                    .fill(Color.red)
+                    .frame(
+                        width: EasyAutomationToolbarMetrics.indicatorSide,
+                        height: EasyAutomationToolbarMetrics.indicatorSide
+                    )
+                Text("REC")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text("\(recorder.eventCount)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Image(systemName: hasFrame ? "photo" : "photo.slash")
+                    .font(.caption2)
+                    .foregroundStyle(hasFrame ? Color.secondary : Color.orange)
+                    .help(hasFrame ? "Frame capture available" : "No frame available")
+            } else if replayEngine.isReplaying {
+                Image(systemName: replayEngine.isLooping ? "repeat.circle.fill" : "play.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
+                Text(replayEngine.isLooping ? "LOOP" : "PLAY")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.primary)
+                Text("\(replayEngine.eventIndex)/\(replayEngine.eventCount)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            } else if recorder.lastSavedURL != nil {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.green)
+                    .help("Automation saved")
+            }
+
+            automationMenu
+            agentEndpointToggle
+        }
+        .padding(.horizontal, EasyAutomationToolbarMetrics.horizontalPadding)
+        .padding(.vertical, EasyAutomationToolbarMetrics.verticalPadding)
+        .background(.regularMaterial)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: EasyAutomationToolbarMetrics.cornerRadius,
+                style: .continuous
+            )
+        )
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: EasyAutomationToolbarMetrics.cornerRadius,
+                style: .continuous
+            )
+            .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        }
+        .onAppear {
+            SpecchioLogger.automation.info("[EasyAutomationToolbar] appeared recording=\(recorder.isRecording) replaying=\(replayEngine.isReplaying) saved=\(recorder.lastSavedURL != nil) sessions=\(replayEngine.sessions.count)")
+            refreshSessions()
+        }
+    }
+
+    private var automationMenu: some View {
+        Menu {
+            if replayEngine.isReplaying {
+                Button("Stop Replay", systemImage: "stop.fill") {
+                    stopReplay()
+                }
+                Divider()
+            }
+
+            if let latest = replayEngine.sessions.first {
+                Button("Play Latest", systemImage: "play.fill") {
+                    playSession(latest, false)
+                }
+                Button("Loop Latest", systemImage: "repeat") {
+                    playSession(latest, true)
+                }
+                Divider()
+            }
+
+            if replayEngine.sessions.isEmpty {
+                Text("No Recordings")
+            } else {
+                ForEach(replayEngine.sessions.prefix(8)) { session in
+                    Menu {
+                        Button("Play Once", systemImage: "play.fill") {
+                            playSession(session, false)
+                        }
+                        Button("Loop", systemImage: "repeat") {
+                            playSession(session, true)
+                        }
+                    } label: {
+                        VStack(alignment: .leading) {
+                            Text(session.displayTitle)
+                            Text(session.detailText)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+            Button("Refresh", systemImage: "arrow.clockwise") {
+                refreshSessions()
+            }
+        } label: {
+            Image(systemName: replayEngine.isReplaying ? "stop.circle" : "play.circle")
+                .font(.system(size: EasyAutomationToolbarMetrics.iconSide, weight: .semibold))
+                .frame(
+                    width: EasyAutomationToolbarMetrics.buttonSide,
+                    height: EasyAutomationToolbarMetrics.buttonSide
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .help(replayEngine.isReplaying ? "Replay automation" : "Play saved automation")
+        .accessibilityLabel("Play saved automation")
+    }
+
+    private var agentEndpointToggle: some View {
+        Button {
+            toggleAgentEndpoint()
+        } label: {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: "network")
+                    .font(.system(size: EasyAutomationToolbarMetrics.iconSide, weight: .semibold))
+                    .frame(
+                        width: EasyAutomationToolbarMetrics.buttonSide,
+                        height: EasyAutomationToolbarMetrics.buttonSide
+                    )
+                Circle()
+                    .fill(agentEndpointIndicatorColor)
+                    .frame(
+                        width: EasyAutomationToolbarMetrics.indicatorSide,
+                        height: EasyAutomationToolbarMetrics.indicatorSide
+                    )
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.18), lineWidth: 0.5)
+                    }
+            }
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(agentEndpointServer.isListening ? Color.green : Color.primary)
+        .help(agentEndpointHelpText)
+        .accessibilityLabel(agentEndpointHelpText)
+    }
+
+    private var agentEndpointIndicatorColor: Color {
+        if agentEndpointServer.isListening {
+            return .green
+        }
+        return agentEndpointEnabled ? .orange : .secondary
+    }
+
+    private var agentEndpointHelpText: String {
+        if agentEndpointServer.isListening {
+            return "Agent API on"
+        }
+        return agentEndpointEnabled ? "Agent API starting" : "Agent API off"
+    }
+}
+
 struct EasyModeView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var bluetoothHIDPanel: BluetoothHIDPanelController
 
     @AppStorage(AppSettings.Keys.easyMouseClutchMode) private var easyMouseClutchMode = true
+    @AppStorage(AppSettings.Keys.easyLiveMouse) private var easyLiveMouse = AppSettings.Defaults.easyLiveMouse
     @AppStorage(AppSettings.Keys.easyHideLocalCursor) private var easyHideLocalCursor = false
     @AppStorage(AppSettings.Keys.easyPointerSpikeEnabled) private var easyPointerSpikeEnabled = true
     @AppStorage(AppSettings.Keys.easyPointerSpikeOverlayEnabled) private var easyPointerSpikeOverlayEnabled = false
@@ -131,6 +330,7 @@ struct EasyModeView: View {
     @AppStorage(AppSettings.Keys.easyToolbarAlwaysVisible) private var easyToolbarAlwaysVisible = AppSettings.Defaults.easyToolbarAlwaysVisible
     @AppStorage(AppSettings.Keys.easyFloatingToolbarAnchor) private var easyFloatingToolbarAnchor = AppSettings.Defaults.easyFloatingToolbarAnchor
     @AppStorage(AppSettings.Keys.easyFloatingToolbarAllowsDragging) private var easyFloatingToolbarAllowsDragging = AppSettings.Defaults.easyFloatingToolbarAllowsDragging
+    @AppStorage(AppSettings.Keys.alwaysOnTop) private var alwaysOnTop = false
     @AppStorage(AppSettings.Keys.autoUnlock) private var easyAutoUnlockEnabled = false
     @AppStorage(AppSettings.Keys.easyReplayKitH264TargetFPS) private var easyReplayKitH264TargetFPS = AppSettings.Defaults.easyReplayKitH264TargetFPS
     @AppStorage(AppSettings.Keys.easyAirPlayQuality) private var easyAirPlayQuality = AppSettings.Defaults.easyAirPlayQuality
@@ -145,6 +345,12 @@ struct EasyModeView: View {
     @StateObject private var connectionTutorialPanel = EasyConnectionTutorialPanelController()
     @StateObject private var airPlayPINPanel = EasyAirPlayPINPanelController()
     @StateObject private var floatingToolbarPanel = EasyFloatingToolbarPanelController()
+    @StateObject private var automationToolbarPanel = EasyFloatingToolbarPanelController(
+        panelTitle: "Specchio Automation Toolbar"
+    )
+    @StateObject private var agentEndpointServer = EasyAgentEndpointServer()
+    @StateObject private var automationRecorder = EasyAutomationRecorder()
+    @StateObject private var automationReplayEngine = EasyAutomationReplayEngine()
     @ObservedObject private var licenseManager = LicenseManager.shared
     @State private var mouseLocation: CGPoint = .zero
     @State private var viewSize: CGSize = .zero
@@ -177,6 +383,7 @@ struct EasyModeView: View {
     @State private var connectionTutorialStage: EasyConnectionTutorialStage?
     @State private var easyAutoUnlockFeedback: EasyAutoUnlockFeedback?
     @State private var easyAutoUnlockFeedbackDismissTask: Task<Void, Never>?
+    @State private var agentEndpointEnabled = true
     private var replayKitUISnapshot: EasyReplayKitUISnapshot {
         EasyReplayKitUISnapshot.make(from: stream)
     }
@@ -835,6 +1042,8 @@ struct EasyModeView: View {
                 EasyConnectionTutorialHostWindowReader { window, reason in
                     floatingToolbarPanel.attachHostWindow(window, reason: reason)
                     syncFloatingToolbarPanel(reason: "host-window-\(reason)")
+                    automationToolbarPanel.attachHostWindow(window, reason: reason)
+                    syncAutomationToolbarPanel(reason: "host-window-\(reason)")
                     connectionTutorialPanel.attachHostWindow(window, reason: reason)
                     airPlayPINPanel.attachHostWindow(window, reason: reason)
                     presentAirPlayPINPanelIfNeeded(source: "host-window-\(reason)")
@@ -849,6 +1058,9 @@ struct EasyModeView: View {
             }
             .onChange(of: connectionTutorialStage) { _, _ in
                 syncConnectionTutorialPanel(reason: "stage changed")
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .easyAutomationInputObserved)) { notification in
+                handleEasyAutomationInputObserved(notification)
             }
     }
 
@@ -966,6 +1178,9 @@ struct EasyModeView: View {
         .onChange(of: easyMouseClutchMode) { _, newValue in
             handleClutchPreferenceChanged(newValue)
         }
+        .onChange(of: easyLiveMouse) { _, newValue in
+            handleLiveMousePreferenceChanged(newValue)
+        }
         .onChange(of: easyHideLocalCursor) { _, newValue in
             handleHideLocalCursorPreferenceChanged(newValue)
         }
@@ -1018,6 +1233,9 @@ struct EasyModeView: View {
         }
         .onChange(of: easyFloatingToolbarAllowsDragging) { _, newValue in
             handleFloatingToolbarDraggingChanged(newValue)
+        }
+        .onChange(of: alwaysOnTop) { _, newValue in
+            handleAlwaysOnTopChanged(newValue)
         }
     }
 
@@ -1090,10 +1308,12 @@ struct EasyModeView: View {
         let toolbarReveal = easyToolbarAlwaysVisible ? "always-visible" : "top-edge"
         SpecchioLogger.easyMode.info("[EasyModeView] appeared width=\(size.width) height=\(size.height) safeLeft=\(safeAreaInsets.leading) safeRight=\(safeAreaInsets.trailing) safeBottom=\(safeAreaInsets.bottom)")
         SpecchioLogger.easyMode.info("[EasyModeView] presentation chrome=iPhoneMirroring branch=toolbar-style-\(toolbarStyle, privacy: .public) toolbarReveal=\(toolbarReveal, privacy: .public) reservedTopChrome=\(reservedTopChrome) headerPosition=\(headerPosition, privacy: .public)")
-        SpecchioLogger.easyMode.info("[EasyModeView] preferences clutchEnabled=\(easyMouseClutchMode) hideLocalCursor=\(easyHideLocalCursor) pointerSpikeEnabled=\(easyPointerSpikeEnabled) pointerSpikeOverlayEnabled=\(easyPointerSpikeOverlayEnabled) pointerSpikeVariant=\(pointerSpikeVariant) trackpadSwipeToDrag=\(easyTrackpadSwipeToDragEnabled) trackpadSwipeMode=\(easyTrackpadSwipeToDragMode, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyModeView] preferences clutchEnabled=\(easyMouseClutchMode) liveMouse=\(easyLiveMouse) hideLocalCursor=\(easyHideLocalCursor) pointerSpikeEnabled=\(easyPointerSpikeEnabled) pointerSpikeOverlayEnabled=\(easyPointerSpikeOverlayEnabled) pointerSpikeVariant=\(pointerSpikeVariant) trackpadSwipeToDrag=\(easyTrackpadSwipeToDragEnabled) trackpadSwipeMode=\(easyTrackpadSwipeToDragMode, privacy: .public)")
         SpecchioLogger.easyMode.info("[EasyModeView] toolbar style=\(toolbarStyle, privacy: .public) layout visible=\(easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(easyToolbarOverflowCommandOrder, privacy: .public) legacy=\(easyToolbarCommandOrder, privacy: .public)")
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] preferences initial anchor=\(easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(easyFloatingToolbarAllowsDragging)")
         syncFloatingToolbarPanel(reason: "appear")
+        syncAutomationToolbarPanel(reason: "appear")
+        automationReplayEngine.refreshSessions(reason: "EasyModeView appeared")
         SpecchioLogger.easyMode.info("[EasyModeView] ReplayKit H.264 target FPS preference=\(easyReplayKitH264TargetFPS)")
         let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: easyAirPlayQuality)
         SpecchioLogger.easyMode.info("[EasyModeView] AirPlay quality preference=\(easyAirPlayQuality, privacy: .public) display=\(airPlayPixels.width)x\(airPlayPixels.height)")
@@ -1105,6 +1325,7 @@ struct EasyModeView: View {
         appState.replayKitStream = stream
         appState.airPlayStream = airPlayStream
         appState.iosScreenCaptureStream = iosScreenCapture
+        syncAgentEndpointServer(reason: "EasyModeView appeared")
         if let warning = rotationMismatchWarning {
             recordRotationMismatchWarning(warning, phase: "appeared")
         }
@@ -1121,6 +1342,7 @@ struct EasyModeView: View {
         }
         viewSize = size
         bluetoothHIDPanel.setEasyMouseClutchModeEnabled(easyMouseClutchMode)
+        bluetoothHIDPanel.setEasyLiveMouseEnabled(easyLiveMouse, reason: "EasyModeView appeared")
         bluetoothHIDPanel.setEasyPointerSpikeEnabled(easyPointerSpikeEnabled, variant: pointerSpikeVariant)
         bluetoothHIDPanel.setTrackpadSwipeToDragMode(easyTrackpadSwipeToDragMode, reason: "EasyModeView appeared")
         bluetoothHIDPanel.setTrackpadSwipeToDragEnabled(easyTrackpadSwipeToDragEnabled, reason: "EasyModeView appeared")
@@ -1135,7 +1357,20 @@ struct EasyModeView: View {
     private func handleDisappear() {
         SpecchioLogger.easyMode.info("[EasyModeView] disappeared; stopping Easy video receivers and suspending Bluetooth HID panel")
         isEasyModeVisible = false
+        if automationRecorder.isRecording {
+            SpecchioLogger.automation.info("[EasyAutomationRecorder] auto-stop requested reason=EasyModeView disappeared")
+            automationRecorder.stop(
+                frame: activeFrame,
+                status: makeAgentEndpointStatusSnapshot(log: false),
+                reason: "EasyModeView disappeared"
+            )
+        }
+        if automationReplayEngine.isReplaying {
+            stopEasyAutomationReplay(source: "EasyModeView disappeared")
+        }
+        stopAgentEndpointServer(reason: "EasyModeView disappeared")
         floatingToolbarPanel.hide(reason: "EasyModeView disappeared")
+        automationToolbarPanel.hide(reason: "EasyModeView disappeared")
         resetAllBluetoothAutoConnectVideoStartAttempts(reason: "EasyModeView disappeared")
         resetPresentationHeaderReveal(reason: "easy-mode-disappear")
         if appState.replayKitStream === stream {
@@ -1179,12 +1414,14 @@ struct EasyModeView: View {
         }
         SpecchioLogger.easyMode.info("[EasyModeView] privacy blur frame visibility evaluated enabled=\(replayKitPrivacyBlurEnabled) hasFrame=\(!isWaitingForFrame) visible=\(replayKitPrivacyBlurVisible)")
         updateBluetoothInputGate(trigger: "\(source) frame presence changed")
+        syncAutomationToolbarPanel(reason: "\(source) frame presence changed")
     }
 
     private func handleActiveFramePresentationChanged(isWaitingForFrame: Bool) {
         SpecchioLogger.easyMode.info("[EasyModeView] active frame presentation changed waiting=\(isWaitingForFrame) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) replayKitHealth=\(stream.streamHealth.diagnosticDescription, privacy: .public) replayKitRawFrame=\(stream.currentFrame != nil) usbHealth=\(iosScreenCapture.streamHealth.diagnosticDescription, privacy: .public) usbRawFrame=\(iosScreenCapture.currentFrame != nil) airPlayHealth=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public) airPlayRawFrame=\(airPlayStream.currentFrame != nil)")
         updateBluetoothInputGate(trigger: "Easy active frame presentation changed")
         updateVideoPremiumOverlay(trigger: isWaitingForFrame ? "Easy active frame returned to waiting" : "Easy active frame visible")
+        syncAutomationToolbarPanel(reason: "Easy active frame presentation changed")
     }
 
     private func handleReplayKitUISnapshotChanged(
@@ -1213,6 +1450,142 @@ struct EasyModeView: View {
         let reason = "\(trigger); activeSource=\(appState.activeVideoSource.diagnosticName); replayKitHealth=\(stream.streamHealth.diagnosticDescription); usbNativeHealth=\(iosScreenCapture.streamHealth.diagnosticDescription); airPlayHealth=\(airPlayStream.streamHealth.diagnosticDescription); airPlayFramePresent=\(airPlayStream.currentFrame != nil); framePresent=\(framePresent); replayKitClientConnected=\(stream.isClientConnected)"
         SpecchioLogger.easyMode.info("[EasyModeView] Bluetooth input gate update enabled=\(enabled) reason=\(reason, privacy: .public)")
         bluetoothHIDPanel.setReplayKitInputForwardingEnabled(enabled, reason: reason)
+    }
+
+    private func startAgentEndpointServer(reason: String) {
+        SpecchioLogger.agent.info("[AgentEndpoint] EasyMode start requested reason=\(reason, privacy: .public) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) framePresent=\(activeFrame != nil)")
+        agentEndpointServer.start(
+            statusProvider: {
+                makeAgentEndpointStatusSnapshot()
+            },
+            frameProvider: {
+                activeFrame
+            },
+            commandHandler: { command in
+                await EasyAgentEndpointCommandExecutor.run(
+                    command,
+                    bluetoothHIDPanel: bluetoothHIDPanel
+                )
+            }
+        )
+    }
+
+    private func stopAgentEndpointServer(reason: String) {
+        SpecchioLogger.agent.info("[AgentEndpoint] EasyMode stop requested reason=\(reason, privacy: .public)")
+        agentEndpointServer.stop(reason: reason)
+    }
+
+    private func syncAgentEndpointServer(reason: String) {
+        let shouldListen = isEasyModeVisible && agentEndpointEnabled
+        SpecchioLogger.agent.info("[AgentEndpoint] sync requested reason=\(reason, privacy: .public) enabled=\(agentEndpointEnabled) visible=\(isEasyModeVisible) shouldListen=\(shouldListen) listening=\(agentEndpointServer.isListening)")
+        if shouldListen {
+            startAgentEndpointServer(reason: reason)
+        } else {
+            stopAgentEndpointServer(reason: reason)
+        }
+    }
+
+    private func toggleAgentEndpointServer(source: String) {
+        agentEndpointEnabled.toggle()
+        SpecchioLogger.agent.info("[AgentEndpoint] toggle requested source=\(source, privacy: .public) enabled=\(agentEndpointEnabled) listening=\(agentEndpointServer.isListening)")
+        syncAgentEndpointServer(reason: "toggle-\(source)")
+    }
+
+    private func makeAgentEndpointStatusSnapshot(log: Bool = true) -> EasyAgentStatusSnapshot {
+        let frame = activeFrame
+        let health: String
+        switch appState.activeVideoSource {
+        case .airPlay:
+            health = airPlayStream.streamHealth.diagnosticDescription
+        case .replayKit, .none:
+            health = stream.streamHealth.diagnosticDescription
+        case .iosScreenCaptureUSB:
+            health = iosScreenCapture.streamHealth.diagnosticDescription
+        default:
+            health = "unsupported-source-\(appState.activeVideoSource.diagnosticName)"
+        }
+
+        let input = bluetoothHIDPanel.easyAgentInputStatusSnapshot()
+        if log {
+            SpecchioLogger.agent.info("[AgentEndpoint] status snapshot source=\(appState.activeVideoSource.diagnosticName, privacy: .public) health=\(health, privacy: .public) framePresent=\(frame != nil) inputReady=\(input.canForwardInput)")
+        }
+        return EasyAgentStatusSnapshot(
+            activeVideoSource: appState.activeVideoSource.diagnosticName,
+            streamHealth: health,
+            framePresent: frame != nil,
+            frameWidth: frame?.width,
+            frameHeight: frame?.height,
+            activeVideoIsLive: activeVideoIsLive,
+            input: input
+        )
+    }
+
+    private func toggleEasyAutomationRecording(source: String) {
+        let status = makeAgentEndpointStatusSnapshot(log: false)
+        if automationRecorder.isRecording {
+            SpecchioLogger.automation.info("[EasyAutomationToolbar] stop requested source=\(source, privacy: .public) framePresent=\(activeFrame != nil) events=\(automationRecorder.eventCount)")
+            automationRecorder.stop(
+                frame: activeFrame,
+                status: status,
+                reason: source
+            )
+            automationReplayEngine.refreshSessions(reason: "recording stopped from \(source)")
+        } else {
+            if automationReplayEngine.isReplaying {
+                stopEasyAutomationReplay(source: "recording-started-\(source)")
+            }
+            SpecchioLogger.automation.info("[EasyAutomationToolbar] start requested source=\(source, privacy: .public) framePresent=\(activeFrame != nil) activeVideoSource=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
+            automationRecorder.start(
+                frame: activeFrame,
+                status: status,
+                reason: source
+            )
+        }
+    }
+
+    private func handleEasyAutomationInputObserved(_ notification: Notification) {
+        guard automationRecorder.isRecording else { return }
+        let status = makeAgentEndpointStatusSnapshot(log: false)
+        SpecchioLogger.automation.debug("[EasyAutomationRecorder] input notification received framePresent=\(activeFrame != nil) source=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
+        automationRecorder.recordInputNotification(
+            notification,
+            frame: activeFrame,
+            status: status
+        )
+    }
+
+    private func playEasyAutomationSession(
+        _ session: EasyAutomationReplaySessionSummary,
+        loop: Bool,
+        source: String
+    ) {
+        if automationRecorder.isRecording {
+            SpecchioLogger.automation.info("[EasyAutomationReplay] stopping recording before replay source=\(source, privacy: .public) session=\(session.id, privacy: .public)")
+            automationRecorder.stop(
+                frame: activeFrame,
+                status: makeAgentEndpointStatusSnapshot(log: false),
+                reason: "Replay started from \(source)"
+            )
+            automationReplayEngine.refreshSessions(reason: "recording stopped before replay")
+        }
+
+        let input = bluetoothHIDPanel.easyAgentInputStatusSnapshot()
+        guard input.canForwardInput else {
+            SpecchioLogger.automation.info("[EasyAutomationReplay] play blocked source=\(source, privacy: .public) session=\(session.id, privacy: .public) loop=\(loop) reason=input-not-ready connected=\(input.bluetoothHIDConnected) interrupt=\(input.interruptChannelConnected) gate=\(input.inputGateEnabled) surface=\(input.pointerSurfaceWidth)x\(input.pointerSurfaceHeight)")
+            return
+        }
+
+        SpecchioLogger.automation.info("[EasyAutomationReplay] play requested source=\(source, privacy: .public) session=\(session.id, privacy: .public) loop=\(loop) events=\(session.replayableEventCount)")
+        automationReplayEngine.play(
+            session,
+            loop: loop,
+            bluetoothHIDPanel: bluetoothHIDPanel
+        )
+    }
+
+    private func stopEasyAutomationReplay(source: String) {
+        SpecchioLogger.automation.info("[EasyAutomationReplay] stop requested source=\(source, privacy: .public)")
+        automationReplayEngine.stop(reason: source)
     }
 
     private func requestBluetoothAutoConnectForVideoPath(
@@ -1328,6 +1701,11 @@ struct EasyModeView: View {
     private func handleClutchPreferenceChanged(_ isEnabled: Bool) {
         SpecchioLogger.easyMode.info("[EasyModeView] clutch preference changed enabled=\(isEnabled)")
         bluetoothHIDPanel.setEasyMouseClutchModeEnabled(isEnabled)
+    }
+
+    private func handleLiveMousePreferenceChanged(_ isEnabled: Bool) {
+        SpecchioLogger.easyMode.info("[EasyModeView] live mouse preference changed enabled=\(isEnabled)")
+        bluetoothHIDPanel.setEasyLiveMouseEnabled(isEnabled, reason: "EasyMode preference changed")
     }
 
     private func handleHideLocalCursorPreferenceChanged(_ isEnabled: Bool) {
@@ -1545,6 +1923,7 @@ struct EasyModeView: View {
     private func handleToolbarAlwaysVisibleChanged(_ isAlwaysVisible: Bool) {
         SpecchioLogger.easyMode.info("[EasyToolbarStyle] always-visible preference changed enabled=\(isAlwaysVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public) visible=\(isEasyModeVisible)")
         syncFloatingToolbarPanel(reason: "always-visible-preference-changed")
+        syncAutomationToolbarPanel(reason: "always-visible-preference-changed")
     }
 
     private func handleToolbarStyleChanged(_ value: String) {
@@ -1560,6 +1939,7 @@ struct EasyModeView: View {
             resetPresentationHeaderReveal(reason: "toolbar-style-floating")
         }
         syncFloatingToolbarPanel(reason: "toolbar-style-changed")
+        syncAutomationToolbarPanel(reason: "toolbar-style-changed")
     }
 
     private func handleFloatingToolbarAnchorChanged(_ value: String) {
@@ -1572,11 +1952,19 @@ struct EasyModeView: View {
 
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] anchor preference changed anchor=\(sanitizedValue, privacy: .public)")
         syncFloatingToolbarPanel(reason: "anchor-preference-changed")
+        syncAutomationToolbarPanel(reason: "anchor-preference-changed")
     }
 
     private func handleFloatingToolbarDraggingChanged(_ allowsDragging: Bool) {
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] dragging preference changed allowsDragging=\(allowsDragging)")
         syncFloatingToolbarPanel(reason: "dragging-preference-changed")
+        syncAutomationToolbarPanel(reason: "dragging-preference-changed")
+    }
+
+    private func handleAlwaysOnTopChanged(_ isAlwaysOnTop: Bool) {
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] always-on-top preference changed enabled=\(isAlwaysOnTop)")
+        syncFloatingToolbarPanel(reason: "always-on-top-preference-changed")
+        syncAutomationToolbarPanel(reason: "always-on-top-preference-changed")
     }
 
     private func syncFloatingToolbarPanel(reason: String) {
@@ -1599,6 +1987,7 @@ struct EasyModeView: View {
             floatingToolbarPanel.update(
                 isVisible: false,
                 toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+                alwaysOnTop: alwaysOnTop,
                 anchor: sanitizedAnchor,
                 allowsDragging: easyFloatingToolbarAllowsDragging,
                 layoutLog: "style=\(sanitizedStyle) visible=\(visibleValue) overflow=\(overflowValue)",
@@ -1645,12 +2034,58 @@ struct EasyModeView: View {
         floatingToolbarPanel.update(
             isVisible: isEasyModeVisible,
             toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+            alwaysOnTop: alwaysOnTop,
             anchor: sanitizedAnchor,
             allowsDragging: easyFloatingToolbarAllowsDragging,
             layoutLog: "visible=\(visibleValue) overflow=\(overflowValue)",
             rootView: AnyView(content),
             reason: reason
         )
+    }
+
+    private func syncAutomationToolbarPanel(reason: String) {
+        let mainAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(easyFloatingToolbarAnchor)
+        let automationAnchor = oppositeFloatingToolbarAnchor(for: mainAnchor)
+        let content = EasyAutomationToolbar(
+            recorder: automationRecorder,
+            replayEngine: automationReplayEngine,
+            agentEndpointServer: agentEndpointServer,
+            hasFrame: activeFrame != nil,
+            agentEndpointEnabled: agentEndpointEnabled
+        ) {
+            toggleEasyAutomationRecording(source: "automation-toolbar")
+        } refreshSessions: {
+            automationReplayEngine.refreshSessions(reason: "automation-toolbar")
+        } playSession: { session, loop in
+            playEasyAutomationSession(session, loop: loop, source: "automation-toolbar")
+        } stopReplay: {
+            stopEasyAutomationReplay(source: "automation-toolbar")
+        } toggleAgentEndpoint: {
+            toggleAgentEndpointServer(source: "automation-toolbar")
+        }
+
+        SpecchioLogger.automation.info("[EasyAutomationToolbarPanel] sync requested reason=\(reason, privacy: .public) visible=\(isEasyModeVisible) mainAnchor=\(mainAnchor, privacy: .public) automationAnchor=\(automationAnchor, privacy: .public) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening) framePresent=\(activeFrame != nil)")
+        automationToolbarPanel.update(
+            isVisible: isEasyModeVisible,
+            toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+            alwaysOnTop: alwaysOnTop,
+            anchor: automationAnchor,
+            allowsDragging: false,
+            layoutLog: "mainAnchor=\(mainAnchor) automationAnchor=\(automationAnchor) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening)",
+            rootView: AnyView(content),
+            reason: reason
+        )
+    }
+
+    private func oppositeFloatingToolbarAnchor(for anchor: String) -> String {
+        switch AppSettings.EasyFloatingToolbarAnchor.sanitized(anchor) {
+        case AppSettings.EasyFloatingToolbarAnchor.above:
+            return AppSettings.EasyFloatingToolbarAnchor.below
+        case AppSettings.EasyFloatingToolbarAnchor.below:
+            return AppSettings.EasyFloatingToolbarAnchor.above
+        default:
+            return AppSettings.EasyFloatingToolbarAnchor.below
+        }
     }
 
     private func performEasyAutoUnlock(source: String) {
@@ -2349,7 +2784,7 @@ struct EasyModeView: View {
             SpecchioLogger.easyMode.info("[EasyModeView] active video source selected from=\(previousSource.diagnosticName, privacy: .public) to=airPlay reason=AirPlay receiving video framePresent=\(airPlayStream.currentFrame != nil) health=\(newValue.diagnosticDescription, privacy: .public)")
             maybeStartBluetoothAutoConnectForAirPlay(from: oldValue, to: newValue)
         case .failed(let reason):
-            airPlayPINPanel.hide(reason: "AirPlay failed: \(reason)")
+            airPlayPINPanel.keepVisibleUntilVideoConnection(reason: "AirPlay failed: \(reason)")
             resetBluetoothAutoConnectVideoStartAttempt(
                 source: .airPlay,
                 reason: "AirPlay failed: \(reason)"
@@ -2396,7 +2831,7 @@ struct EasyModeView: View {
                 SpecchioLogger.easyMode.info("[EasyModeView] AirPlay stale ignored branch=ACTIVE_SOURCE_NOT_AIRPLAY activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) reason=\(reason, privacy: .public)")
             }
         case .disconnected(let reason):
-            airPlayPINPanel.hide(reason: "AirPlay disconnected: \(reason)")
+            airPlayPINPanel.keepVisibleUntilVideoConnection(reason: "AirPlay disconnected: \(reason)")
             resetBluetoothAutoConnectVideoStartAttempt(
                 source: .airPlay,
                 reason: "AirPlay disconnected: \(reason)"
@@ -2432,8 +2867,8 @@ struct EasyModeView: View {
             presentAirPlayPINPanelIfNeeded(source: "AirPlay PIN requested")
             SpecchioLogger.easyMode.info("[EasyModeView] active video source selected from=\(previousSource.diagnosticName, privacy: .public) to=airPlay reason=AirPlay PIN requested pinDigits=\(newValue?.count ?? 0)")
         } else {
-            airPlayPINPanel.hide(reason: "AirPlay PIN hidden")
-            SpecchioLogger.easyMode.info("[EasyModeView] AirPlay PIN hidden activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) health=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public)")
+            airPlayPINPanel.keepVisibleUntilVideoConnection(reason: "AirPlay PIN state cleared before video")
+            SpecchioLogger.easyMode.info("[EasyModeView] AirPlay PIN state cleared; panel retained until video connection activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) health=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public)")
         }
     }
 
@@ -3867,14 +4302,40 @@ private struct EasyFloatingToolbarNativeWindowControlState: Equatable {
     let canZoom: Bool
 }
 
+private final class EasyFloatingToolbarPanelWindow: NSPanel {
+    var onToolbarMouseDown: ((NSEvent) -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if Self.shouldPromoteHostWindow(for: event) {
+            onToolbarMouseDown?(event)
+        }
+
+        super.sendEvent(event)
+    }
+
+    private static func shouldPromoteHostWindow(for event: NSEvent) -> Bool {
+        switch event.type {
+        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 private final class EasyFloatingToolbarPanelController: NSObject, ObservableObject, NSWindowDelegate {
     private var panel: NSPanel?
     private weak var hostWindow: NSWindow?
     private var hostWindowObservers: [NSObjectProtocol] = []
     private var applicationObservers: [NSObjectProtocol] = []
+    private let panelTitle: String
     private var desiredVisible = false
     private var lastContentSize: CGSize = .zero
     private var currentAnchor = AppSettings.Defaults.easyFloatingToolbarAnchor
+    private var currentAlwaysOnTop = false
     private var currentAllowsDragging = AppSettings.Defaults.easyFloatingToolbarAllowsDragging
     private var hostWindowDragSession: HostWindowDragSession?
 
@@ -3883,6 +4344,11 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
         let startMouseLocation: CGPoint
         let startHostFrame: CGRect
         let startPanelFrame: CGRect
+    }
+
+    init(panelTitle: String = "Specchio Easy Toolbar") {
+        self.panelTitle = panelTitle
+        super.init()
     }
 
     func attachHostWindow(_ window: NSWindow?, reason: String) {
@@ -3911,6 +4377,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
     func update(
         isVisible: Bool,
         toolbarAlwaysVisiblePreference: Bool,
+        alwaysOnTop: Bool,
         anchor: String,
         allowsDragging: Bool,
         layoutLog: String,
@@ -3920,8 +4387,9 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
         desiredVisible = isVisible
         let sanitizedAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(anchor)
         currentAnchor = sanitizedAnchor
+        currentAlwaysOnTop = alwaysOnTop
         currentAllowsDragging = allowsDragging
-        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] update requested reason=\(reason, privacy: .public) desiredVisible=\(isVisible) alwaysVisiblePreference=\(toolbarAlwaysVisiblePreference) anchor=\(sanitizedAnchor, privacy: .public) allowsDragging=\(allowsDragging) hostWindow=\(self.hostWindow?.windowNumber ?? -1) \(layoutLog, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] update requested reason=\(reason, privacy: .public) desiredVisible=\(isVisible) alwaysVisiblePreference=\(toolbarAlwaysVisiblePreference) alwaysOnTop=\(alwaysOnTop) anchor=\(sanitizedAnchor, privacy: .public) allowsDragging=\(allowsDragging) hostWindow=\(self.hostWindow?.windowNumber ?? -1) \(layoutLog, privacy: .public)")
 
         guard isVisible else {
             orderOut(reason: "\(reason)-easy-mode-hidden")
@@ -3942,14 +4410,13 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
 
         let panel = panel ?? makePanel()
         self.panel = panel
+        configurePanelLevel(panel, alwaysOnTop: alwaysOnTop, reason: reason)
         configurePanelMovement(panel, allowsDragging: allowsDragging, reason: reason)
         updateRootView(rootView, in: panel, reason: reason)
         updateContentSize(for: panel, reason: reason)
         position(panel, near: hostWindow, anchor: sanitizedAnchor, reason: reason)
 
-        let wasVisible = panel.isVisible
-        panel.orderFrontRegardless()
-        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] shown reason=\(reason, privacy: .public) wasVisible=\(wasVisible) hostWindow=\(hostWindow.windowNumber) panelFrame=\(InputSurfaceDiagnostics.rectString(panel.frame), privacy: .public)")
+        orderPanelAboveHost(panel, hostWindow: hostWindow, reason: reason)
         scheduleDeferredPosition(reason: "\(reason)-shown", expectedHostWindow: hostWindow)
     }
 
@@ -4089,6 +4556,9 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
         }
 
         closingWindow.contentView = nil
+        if let closingPanel = closingWindow as? EasyFloatingToolbarPanelWindow {
+            closingPanel.onToolbarMouseDown = nil
+        }
         panel = nil
         lastContentSize = .zero
         desiredVisible = false
@@ -4102,26 +4572,44 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(
+        let panel = EasyFloatingToolbarPanelWindow(
             contentRect: CGRect(origin: .zero, size: EasyFloatingToolbarPanelMetrics.fallbackContentSize),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        panel.title = "Specchio Easy Toolbar"
-        panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.title = panelTitle
+        panel.isFloatingPanel = currentAlwaysOnTop
+        panel.level = currentAlwaysOnTop ? .floating : .normal
         panel.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.isMovableByWindowBackground = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
         panel.delegate = self
-        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] created style=borderless-nonactivating level=\(panel.level.rawValue) panelSelfDragging=false hostWindowDragging=\(self.currentAllowsDragging) fallbackWidth=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.width) fallbackHeight=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.height)")
+        panel.onToolbarMouseDown = { [weak self] event in
+            self?.promoteHostWindowForToolbarInteraction(event: event, reason: "toolbar-mouse-down")
+        }
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] created title=\(self.panelTitle, privacy: .public) style=borderless-activating alwaysOnTop=\(self.currentAlwaysOnTop) level=\(panel.level.rawValue) isFloatingPanel=\(panel.isFloatingPanel) panelSelfDragging=false hostWindowDragging=\(self.currentAllowsDragging) fallbackWidth=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.width) fallbackHeight=\(EasyFloatingToolbarPanelMetrics.fallbackContentSize.height)")
         return panel
+    }
+
+    private func configurePanelLevel(_ panel: NSPanel, alwaysOnTop: Bool, reason: String) {
+        let targetLevel: NSWindow.Level = alwaysOnTop ? .floating : .normal
+        let previousLevel = panel.level
+        let previousIsFloatingPanel = panel.isFloatingPanel
+
+        panel.isFloatingPanel = alwaysOnTop
+        if panel.level != targetLevel {
+            panel.level = targetLevel
+        }
+
+        let changed = previousLevel != panel.level || previousIsFloatingPanel != panel.isFloatingPanel
+        let logBranch = changed ? "applied" : "unchanged"
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] level \(logBranch, privacy: .public) reason=\(reason, privacy: .public) alwaysOnTop=\(alwaysOnTop) previousLevel=\(previousLevel.rawValue) currentLevel=\(panel.level.rawValue) previousFloatingPanel=\(previousIsFloatingPanel) currentFloatingPanel=\(panel.isFloatingPanel)")
     }
 
     private func configurePanelMovement(_ panel: NSPanel, allowsDragging: Bool, reason: String) {
@@ -4206,6 +4694,36 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
         }
 
         position(panel, near: hostWindow, anchor: currentAnchor, reason: reason)
+    }
+
+    private func orderPanelAboveHost(_ panel: NSPanel, hostWindow: NSWindow, reason: String) {
+        let wasVisible = panel.isVisible
+        panel.order(.above, relativeTo: hostWindow.windowNumber)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] shown reason=\(reason, privacy: .public) ordering=relative-to-host wasVisible=\(wasVisible) appActive=\(NSApplication.shared.isActive) alwaysOnTop=\(self.currentAlwaysOnTop) hostWindow=\(hostWindow.windowNumber) hostLevel=\(hostWindow.level.rawValue) panelLevel=\(panel.level.rawValue) panelFloating=\(panel.isFloatingPanel) panelFrame=\(InputSurfaceDiagnostics.rectString(panel.frame), privacy: .public)")
+    }
+
+    private func promoteHostWindowForToolbarInteraction(event: NSEvent, reason: String) {
+        guard let panel else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host promote skipped reason=\(reason, privacy: .public) branch=no-panel eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber)")
+            return
+        }
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host promote skipped reason=\(reason, privacy: .public) branch=no-host-window eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber)")
+            return
+        }
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host promote skipped reason=\(reason, privacy: .public) branch=host-miniaturized eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber) hostWindow=\(hostWindow.windowNumber)")
+            return
+        }
+
+        let appWasActive = NSApplication.shared.isActive
+        let hostWasKey = hostWindow.isKeyWindow
+        let hostWasVisible = hostWindow.isVisible
+        let panelWasKey = panel.isKeyWindow
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        hostWindow.orderFront(nil)
+        orderPanelAboveHost(panel, hostWindow: hostWindow, reason: "\(reason)-host-promoted")
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] host promoted reason=\(reason, privacy: .public) eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber) appWasActive=\(appWasActive) appIsActive=\(NSApplication.shared.isActive) hostWindow=\(hostWindow.windowNumber) hostWasKey=\(hostWasKey) hostIsKey=\(hostWindow.isKeyWindow) hostWasVisible=\(hostWasVisible) hostIsVisible=\(hostWindow.isVisible) panelWasKey=\(panelWasKey) panelIsKey=\(panel.isKeyWindow) alwaysOnTop=\(self.currentAlwaysOnTop) hostLevel=\(hostWindow.level.rawValue) panelLevel=\(panel.level.rawValue)")
     }
 
     private func scheduleDeferredPosition(reason: String, expectedHostWindow: NSWindow) {
@@ -4337,8 +4855,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
                 }
 
                 self.position(panel, near: hostWindow, anchor: self.currentAnchor, reason: "host-window-deminiaturized")
-                panel.orderFrontRegardless()
-                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] shown reason=host-window-deminiaturized hostWindow=\(hostWindow.windowNumber)")
+                self.orderPanelAboveHost(panel, hostWindow: hostWindow, reason: "host-window-deminiaturized")
             },
             NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
@@ -4382,8 +4899,9 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
                 forName: NSApplication.didResignActiveNotification,
                 object: NSApplication.shared,
                 queue: .main
-            ) { _ in
-                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] app resigned active branch=panel-kept-visible")
+            ) { [weak self] _ in
+                guard let self else { return }
+                SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] app resigned active alwaysOnTop=\(self.currentAlwaysOnTop) panelLevel=\(self.panel?.level.rawValue ?? -1) branch=panel-kept-at-configured-level")
             }
         ]
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] app observers installed reason=\(reason, privacy: .public) count=\(self.applicationObservers.count)")
@@ -4837,7 +5355,6 @@ private enum EasyFloatingToolbarNativeWindowButtonKind: CaseIterable {
 }
 
 private enum EasyAirPlayPINPanelMetrics {
-    static let displayDurationSeconds: TimeInterval = 5
     static let panelSize = CGSize(width: 360, height: 230)
     static let screenMargin: CGFloat = 18
 }
@@ -4845,8 +5362,6 @@ private enum EasyAirPlayPINPanelMetrics {
 private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, NSWindowDelegate {
     private var panel: NSPanel?
     private weak var hostWindow: NSWindow?
-    private var dismissalWorkItem: DispatchWorkItem?
-    private var displayGeneration = 0
     private var currentPINDigitCount: Int?
 
     func attachHostWindow(_ window: NSWindow?, reason: String) {
@@ -4877,7 +5392,6 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
 
         let panel = panel ?? makePanel()
         self.panel = panel
-        displayGeneration += 1
         currentPINDigitCount = trimmedPIN.count
 
         let contentSize = EasyAirPlayPINPanelMetrics.panelSize
@@ -4892,13 +5406,23 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
         position(panel, reason: source)
         panel.orderFrontRegardless()
         installHostNativeChromeDebugOverlays(reason: "\(source)-after-pin-panel-order-front")
-        scheduleAutoDismiss(generation: displayGeneration, source: source)
-        SpecchioLogger.easyMode.warning("[EasyAirPlayPINPanelWindow] shown source=\(source, privacy: .public) pinDigits=\(trimmedPIN.count) generation=\(self.displayGeneration)")
+        SpecchioLogger.easyMode.warning("[EasyAirPlayPINPanelWindow] shown source=\(source, privacy: .public) pinDigits=\(trimmedPIN.count) lifetime=until-airplay-receiving-video")
+    }
+
+    func keepVisibleUntilVideoConnection(reason: String) {
+        guard let panel else {
+            SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] retain skipped reason=\(reason, privacy: .public) branch=no-panel")
+            return
+        }
+        guard panel.isVisible else {
+            SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] retain skipped reason=\(reason, privacy: .public) branch=panel-not-visible pinDigits=\(self.currentPINDigitCount ?? 0)")
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] retained reason=\(reason, privacy: .public) lifetime=until-airplay-receiving-video pinDigits=\(self.currentPINDigitCount ?? 0)")
     }
 
     func hide(reason: String) {
-        dismissalWorkItem?.cancel()
-        dismissalWorkItem = nil
         currentPINDigitCount = nil
 
         guard let panel else {
@@ -4917,8 +5441,6 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
             return
         }
 
-        dismissalWorkItem?.cancel()
-        dismissalWorkItem = nil
         closingWindow.contentView = nil
         panel = nil
         currentPINDigitCount = nil
@@ -4940,25 +5462,6 @@ private final class EasyAirPlayPINPanelController: NSObject, ObservableObject, N
         panel.delegate = self
         SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] created")
         return panel
-    }
-
-    private func scheduleAutoDismiss(generation: Int, source: String) {
-        dismissalWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            guard self.displayGeneration == generation else {
-                SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] auto-dismiss skipped source=\(source, privacy: .public) branch=generation-mismatch expected=\(generation) actual=\(self.displayGeneration)")
-                return
-            }
-
-            self.hide(reason: "AirPlay PIN auto-dismiss after \(EasyAirPlayPINPanelMetrics.displayDurationSeconds)s")
-        }
-        dismissalWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + EasyAirPlayPINPanelMetrics.displayDurationSeconds,
-            execute: workItem
-        )
-        SpecchioLogger.easyMode.info("[EasyAirPlayPINPanelWindow] auto-dismiss scheduled source=\(source, privacy: .public) generation=\(generation) seconds=\(EasyAirPlayPINPanelMetrics.displayDurationSeconds)")
     }
 
     private func positionVisiblePanel(reason: String) {

@@ -20,6 +20,7 @@ class AppSettings: ObservableObject {
         static let onboardingStep = "onboardingStep"
         static let interactiveTutorialPhase = "interactiveTutorialPhase"
         static let easyMouseClutchMode = "easyMouseClutchMode"
+        static let easyLiveMouse = "easyLiveMouse"
         static let easyHideLocalCursor = "easyHideLocalCursor"
         static let easyPointerSpikeEnabled = "easyPointerSpikeEnabled"
         static let easyPointerSpikeOverlayEnabled = "easyPointerSpikeOverlayEnabled"
@@ -52,6 +53,7 @@ class AppSettings: ObservableObject {
         static let easyFloatingToolbarAnchor = EasyFloatingToolbarAnchor.above
         static let easyFloatingToolbarAllowsDragging = true
         static let easyAirPlayConnectionTutorialHidden = false
+        static let easyLiveMouse = false
         static let easyTrackpadSwipeToDragEnabled = false
         static let easyTrackpadSwipeToDragMode = EasyTrackpadSwipeToDragMode.live
     }
@@ -227,6 +229,8 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.onboardingStep) var onboardingStep: Int = 0
     /// Easy mode: require right mouse button clutch before forwarding pointer movement.
     @AppStorage(Keys.easyMouseClutchMode) var easyMouseClutchMode: Bool = true
+    /// Easy mode: forward mouse movement live while the Easy mirror window is focused.
+    @AppStorage(Keys.easyLiveMouse) var easyLiveMouse: Bool = Defaults.easyLiveMouse
     /// Easy mode: hide the local macOS cursor while hovering the mirrored phone surface.
     @AppStorage(Keys.easyHideLocalCursor) var easyHideLocalCursor: Bool = false
     /// Easy mode: enable deterministic absolute pointer input.

@@ -15,4 +15,6 @@ enum SpecchioLogger {
     static let video = Logger(subsystem: "com.alexintosh.Specchio", category: "Video")
     static let iosScreenCapture = Logger(subsystem: "com.alexintosh.Specchio", category: "IOSScreenCapture")
     static let frameDiagnostics = Logger(subsystem: "com.alexintosh.Specchio", category: "FrameDiagnostics")
+    static let agent = Logger(subsystem: "com.alexintosh.Specchio", category: "Agent")
+    static let automation = Logger(subsystem: "com.alexintosh.Specchio", category: "Automation")
 }

@@ -207,6 +207,9 @@ struct SettingsView: View {
         .onChange(of: settings.easyMouseClutchMode) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy clutch mode changed enabled=\(newValue)")
         }
+        .onChange(of: settings.easyLiveMouse) { _, newValue in
+            SpecchioLogger.easyMode.info("[Settings] Easy live mouse changed enabled=\(newValue)")
+        }
         .onChange(of: settings.easyHideLocalCursor) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy hide local cursor changed enabled=\(newValue)")
         }
@@ -324,7 +327,7 @@ struct SettingsView: View {
         SpecchioLogger.easyMode.info("[Settings] easyToolbarAlwaysVisible=\(self.settings.easyToolbarAlwaysVisible)")
         SpecchioLogger.easyMode.info("[Settings] easyAirPlayConnectionTutorialHidden=\(self.settings.easyAirPlayConnectionTutorialHidden)")
         sanitizeAirPlayQualityPreference(source: "settings appeared")
-        SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
+        SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyLiveMouse=\(self.settings.easyLiveMouse) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
         SpecchioLogger.easyMode.info("[Settings] easyTrackpadSwipeToDragEnabled=\(self.settings.easyTrackpadSwipeToDragEnabled) mode=\(self.settings.easyTrackpadSwipeToDragMode, privacy: .public)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarCommandOrder legacy=\(self.settings.easyToolbarCommandOrder, privacy: .public) visible=\(self.settings.easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(self.settings.easyToolbarOverflowCommandOrder, privacy: .public)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarStyle=\(self.settings.easyToolbarStyle, privacy: .public)")
@@ -463,7 +466,12 @@ struct SettingsView: View {
     private var easyInputSection: some View {
         Section("Bluetooth Input") {
             Toggle("Right-Button Clutch Mode", isOn: $settings.easyMouseClutchMode)
-            Text("When enabled, Easy forwards mouse movement only while the right mouse button is held. Disable it to send movement continuously.")
+            Text("Controls the right-button movement clutch. Live Mouse overrides it for real-time movement while the mirror window is focused.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Toggle("Live Mouse", isOn: $settings.easyLiveMouse)
+            Text("When enabled, Easy forwards pointer movement in real time while the mirror window is focused.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 

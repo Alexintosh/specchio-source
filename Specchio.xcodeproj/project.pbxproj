@@ -103,6 +103,9 @@
 		AIRPBF00000000000000013 /* AirPlayAudioSinkServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000013 /* AirPlayAudioSinkServer.swift */; };
 		AIRPBF00000000000000014 /* AirPlayH264DumpWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */; };
 		AIRPTB00000000000000001 /* AirPlayProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */; };
+		AGENTBF000000000000001 /* EasyAgentEndpointServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AGENTFR000000000000001 /* EasyAgentEndpointServer.swift */; };
+		AUTOBF0000000000000002 /* EasyAutomationReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AUTOFR0000000000000002 /* EasyAutomationReplayEngine.swift */; };
+		AUTOBF0000000000000001 /* EasyAutomationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AUTOFR0000000000000001 /* EasyAutomationRecorder.swift */; };
 		FPLAYBF0000000000000001 /* libfairplay.dylib in Copy AirPlay FairPlay Provider */ = {isa = PBXBuildFile; fileRef = FPLAYFR0000000000000001 /* libfairplay.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		ITUTBF0000000000000001 /* InteractiveTutorial.swift in Sources */ = {isa = PBXBuildFile; fileRef = ITUTFR0000000000000001 /* InteractiveTutorial.swift */; };
 /* End PBXBuildFile section */
@@ -241,6 +244,9 @@
 		AIRPFR00000000000000013 /* AirPlayAudioSinkServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayAudioSinkServer.swift; sourceTree = "<group>"; };
 		AIRPFR00000000000000014 /* AirPlayH264DumpWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayH264DumpWriter.swift; sourceTree = "<group>"; };
 		AIRPTF00000000000000001 /* AirPlayProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPlayProtocolTests.swift; sourceTree = "<group>"; };
+		AGENTFR000000000000001 /* EasyAgentEndpointServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EasyAgentEndpointServer.swift; sourceTree = "<group>"; };
+		AUTOFR0000000000000002 /* EasyAutomationReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EasyAutomationReplayEngine.swift; sourceTree = "<group>"; };
+		AUTOFR0000000000000001 /* EasyAutomationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EasyAutomationRecorder.swift; sourceTree = "<group>"; };
 		FPLAYFR0000000000000001 /* libfairplay.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; path = libfairplay.dylib; sourceTree = "<group>"; };
 		ITUTFR0000000000000001 /* InteractiveTutorial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTutorial.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -380,6 +386,23 @@
 			path = Bluetooth;
 			sourceTree = "<group>";
 		};
+		AGENTGR000000000000001 /* Agent */ = {
+			isa = PBXGroup;
+			children = (
+				AGENTFR000000000000001 /* EasyAgentEndpointServer.swift */,
+			);
+			path = Agent;
+			sourceTree = "<group>";
+		};
+		AUTOGR0000000000000001 /* Automation */ = {
+			isa = PBXGroup;
+			children = (
+				AUTOFR0000000000000002 /* EasyAutomationReplayEngine.swift */,
+				AUTOFR0000000000000001 /* EasyAutomationRecorder.swift */,
+			);
+			path = Automation;
+			sourceTree = "<group>";
+		};
 		AIRPGR00000000000000001 /* AirPlay */ = {
 			isa = PBXGroup;
 			children = (
@@ -456,8 +479,10 @@
 		F57D409182E6CC653B3E4926 /* Specchio */ = {
 			isa = PBXGroup;
 			children = (
+				AGENTGR000000000000001 /* Agent */,
 				AIRPGR00000000000000001 /* AirPlay */,
 				B9AD6977E9672F803B01FC10 /* App */,
+				AUTOGR0000000000000001 /* Automation */,
 				BT500001B7A5E4D3C2B1A0900 /* Bluetooth */,
 				7C8DFE7F42777A54F414919E /* Device */,
 				5B27EB474E56D2D5482C7CF5 /* Display */,
@@ -670,6 +695,9 @@
 				AIRPBF00000000000000012 /* AirPlayTimingServer.swift in Sources */,
 				AIRPBF00000000000000013 /* AirPlayAudioSinkServer.swift in Sources */,
 				AIRPBF00000000000000014 /* AirPlayH264DumpWriter.swift in Sources */,
+				AGENTBF000000000000001 /* EasyAgentEndpointServer.swift in Sources */,
+				AUTOBF0000000000000002 /* EasyAutomationReplayEngine.swift in Sources */,
+				AUTOBF0000000000000001 /* EasyAutomationRecorder.swift in Sources */,
 				BT000002B7A5E4D3C2B1A0902 /* BluetoothHIDPanelController.swift in Sources */,
 				72F27B071798027076CC5FD0 /* ClipboardSync.swift in Sources */,
 				BT000001B7A5E4D3C2B1A0901 /* ClassicBluetoothRuntime.swift in Sources */,
@@ -921,7 +949,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026061101;
+				CURRENT_PROJECT_VERSION = 2026061201;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -929,7 +957,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026061101;
+				MARKETING_VERSION = 2026061201;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -944,7 +972,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026061101;
+				CURRENT_PROJECT_VERSION = 2026061201;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -953,7 +981,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026061101;
+				MARKETING_VERSION = 2026061201;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;

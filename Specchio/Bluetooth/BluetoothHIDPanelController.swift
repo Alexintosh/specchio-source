@@ -13,6 +13,7 @@ extension Notification.Name {
     static let easyBluetoothPeerUnpaired = Notification.Name("SpecchioEasyBluetoothPeerUnpaired")
     static let easyPointerSpikeVisualization = Notification.Name("SpecchioEasyPointerSpikeVisualization")
     static let easyPointerSpikeMetrics = Notification.Name("SpecchioEasyPointerSpikeMetrics")
+    static let easyAutomationInputObserved = Notification.Name("SpecchioEasyAutomationInputObserved")
 }
 
 enum BluetoothAutoConnectOverlayPhase: String, Equatable {
@@ -252,6 +253,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var mouseDeltaRemainderX: CGFloat = 0
     private var mouseDeltaRemainderY: CGFloat = 0
     private var easyMouseClutchModeEnabled = true
+    private var easyLiveMouseEnabled = AppSettings.Defaults.easyLiveMouse
     private var trackpadSwipeToDragEnabled = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
     private var trackpadSwipeToDragMode = AppSettings.Defaults.easyTrackpadSwipeToDragMode
     private var trackpadSwipeDragPhase: TrackpadSwipeDragPhase = .idle
@@ -291,6 +293,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var logBuffer: [String] = []
     private var isAdvancedLogVisible = false
     private var inputEventDropCount = 0
+    private var nonKeyMouseForwardCount = 0
     private var interruptWritesInFlight = 0
     private var mouseStatsWindowStartedAt = CACurrentMediaTime()
     private var mouseEventsAtWindowStart = 0
@@ -758,6 +761,24 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
     }
 
+    func setEasyLiveMouseEnabled(_ enabled: Bool, reason: String) {
+        guard Thread.isMainThread else {
+            runOnMain("setEasyLiveMouseEnabled") { [weak self] in
+                self?.setEasyLiveMouseEnabled(enabled, reason: reason)
+            }
+            return
+        }
+
+        let previous = easyLiveMouseEnabled
+        easyLiveMouseEnabled = enabled
+        appendLog("[MouseLive] setting sync reason=\(reason) previous=\(previous) enabled=\(enabled) passthrough=\(mousePassthroughEnabled) appActive=\(NSApplication.shared.isActive) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false) pointerSpike=\(easyPointerSpikeEnabled) absoluteMouseReport=\(absolutePointerTransportEnabled)")
+
+        guard previous != enabled else { return }
+        mouseDeltaRemainderX = 0
+        mouseDeltaRemainderY = 0
+        appendLog("[MouseLive] setting changed reason=\(reason) resetRemainder=true movementRequires=active-key-easy-window")
+    }
+
     func setTrackpadSwipeToDragEnabled(_ enabled: Bool, reason: String) {
         guard Thread.isMainThread else {
             runOnMain("setTrackpadSwipeToDragEnabled") { [weak self] in
@@ -855,6 +876,33 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             replayKitInputGateDropCount = 0
         }
         return true
+    }
+
+    func easyAgentInputStatusSnapshot() -> EasyAgentInputStatusSnapshot {
+        let frame = inputSurfaceFrameInWindow
+        let targetWindow = targetInputWindow
+        let status = EasyAgentInputStatusSnapshot(
+            bluetoothHIDConnected: isBluetoothHIDConnected,
+            interruptChannelConnected: interruptChannel != nil,
+            inputGateEnabled: replayKitInputForwardingEnabled,
+            inputGateReason: replayKitInputForwardingReason,
+            mousePassthroughEnabled: mousePassthroughEnabled,
+            appActive: NSApplication.shared.isActive,
+            targetInputWindowBound: targetWindow != nil,
+            targetInputWindowKey: targetWindow?.isKeyWindow,
+            targetInputWindowNumber: targetWindow?.windowNumber,
+            pointerSurfaceWidth: Double(pointerSurfaceSize.width),
+            pointerSurfaceHeight: Double(pointerSurfaceSize.height),
+            pointerSurfaceOrientation: InputSurfaceDiagnostics.orientationString(pointerSurfaceSize),
+            inputSurfaceFrameX: frame.map { Double($0.minX) },
+            inputSurfaceFrameY: frame.map { Double($0.minY) },
+            inputSurfaceFrameWidth: frame.map { Double($0.width) },
+            inputSurfaceFrameHeight: frame.map { Double($0.height) },
+            displayRotationDegrees: inputSurfaceRotationDegrees,
+            absolutePointerTransportEnabled: absolutePointerTransportEnabled
+        )
+        appendLog("[AgentInput] status snapshot connected=\(status.bluetoothHIDConnected) interrupt=\(status.interruptChannelConnected) gate=\(status.inputGateEnabled) mouse=\(status.mousePassthroughEnabled) appActive=\(status.appActive) targetWindow=\(status.targetInputWindowNumber ?? -1) targetKey=\(status.targetInputWindowKey.map(String.init) ?? "nil") surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) rotation=\(inputSurfaceRotationDegrees) absolute=\(absolutePointerTransportEnabled)")
+        return status
     }
 
     private func refreshInputGateStatusLabels(reason: String) {
@@ -979,6 +1027,22 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         easyPointerSpikeEnabled
     }
 
+    private func liveMouseFocusState(for event: NSEvent) -> (active: Bool, reason: String) {
+        guard easyLiveMouseEnabled else {
+            return (false, "disabled")
+        }
+        guard NSApplication.shared.isActive else {
+            return (false, "app-inactive")
+        }
+        guard let targetInputWindow else {
+            return (false, "missing-target-window")
+        }
+        guard event.window === targetInputWindow else {
+            return (false, "event-window-mismatch")
+        }
+        return (true, targetInputWindow.isKeyWindow ? "focused-key-window" : "focused-non-key-window")
+    }
+
     func show() {
         guard Thread.isMainThread else {
             runOnMain("show Bluetooth HID panel") { [weak self] in
@@ -1070,6 +1134,16 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             let previousSurfaceSize = self.pointerSurfaceSize
             let previousSurfaceOrientation = InputSurfaceDiagnostics.orientationString(previousSurfaceSize)
             self.inputWindow = window
+            if let window {
+                if window.acceptsMouseMovedEvents {
+                    self.appendLog("[MouseLive] input surface window already accepts mouseMoved window=\(window.windowNumber)")
+                } else {
+                    window.acceptsMouseMovedEvents = true
+                    self.appendLog("[MouseLive] enabled mouseMoved events on input surface window=\(window.windowNumber)")
+                }
+            } else {
+                self.appendLog("[MouseLive] mouseMoved enable skipped reason=no-input-window")
+            }
             let frameIsUsable = InputSurfaceDiagnostics.isFinite(frameInWindow)
                 && frameInWindow.width > 0
                 && frameInWindow.height > 0
@@ -1108,13 +1182,14 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             } else {
                 self.appendLog("[InputSurface] rotation unchanged rotation=\(nextRotation) branch=no-pointer-reset")
             }
-            self.appendLog("[InputSurface] Bound video surface window=\(window?.windowNumber ?? -1) frame=\(InputSurfaceDiagnostics.rectString(frameInWindow)) frameUsable=\(frameIsUsable) phone=\(InputSurfaceDiagnostics.sizeString(self.pointerSurfaceSize)) rotation=\(self.inputSurfaceRotationDegrees) rotationChanged=\(rotationChanged)")
+            self.appendLog("[InputSurface] Bound video surface window=\(window?.windowNumber ?? -1) frame=\(InputSurfaceDiagnostics.rectString(frameInWindow)) frameUsable=\(frameIsUsable) acceptsMouseMoved=\(window?.acceptsMouseMovedEvents ?? false) phone=\(InputSurfaceDiagnostics.sizeString(self.pointerSurfaceSize)) rotation=\(self.inputSurfaceRotationDegrees) rotationChanged=\(rotationChanged)")
             self.recordInputSurfaceDiagnostic(
                 event: "bindInputSurface",
                 reason: rotationChanged ? "display-rotation-changed" : "surface-bound",
                 details: [
                     "windowPresent": String(window != nil),
                     "windowNumber": String(window?.windowNumber ?? -1),
+                    "acceptsMouseMoved": String(window?.acceptsMouseMovedEvents ?? false),
                     "frameUsable": String(frameIsUsable),
                     "frame": InputSurfaceDiagnostics.rectString(frameInWindow),
                     "previousFrame": previousFrameString,
@@ -1346,6 +1421,393 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         let wheel = Int8(clamping: Int(boundedWheelDelta.rounded(.towardZero)))
         appendLog("[Pointer] scroll deltaY=\(deltaY) wheel=\(wheel)")
         sendMouseReport(buttons: 0, dx: 0, dy: 0, dz: 0, wheel: wheel)
+    }
+
+    func agentMovePointer(to phonePoint: CGPoint, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] move requested requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+        guard agentCanStartHIDCommand(source: "Agent pointer move", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[AgentInput] move rejected requestID=\(requestID) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        movePointer(to: phonePoint, reason: "agent-move:\(requestID)", origin: .authoritativeActual)
+        postPointerFeedback(kind: "agentMove", point: clampPhonePointToSurface(phonePoint))
+        return .accepted("Pointer move accepted", details: [
+            "x": InputSurfaceDiagnostics.intString(phonePoint.x),
+            "y": InputSurfaceDiagnostics.intString(phonePoint.y),
+        ])
+    }
+
+    func agentPointerDown(at phonePoint: CGPoint, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] pointer down requested requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+        guard agentCanStartHIDCommand(source: "Agent pointer down", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[AgentInput] pointer down rejected requestID=\(requestID) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        beginPointerInteraction(at: phonePoint)
+        postPointerFeedback(kind: "agentDown", point: clampPhonePointToSurface(phonePoint))
+        return .accepted("Pointer down accepted")
+    }
+
+    func agentPointerUp(at phonePoint: CGPoint, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] pointer up requested requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+        guard agentCanStartHIDCommand(source: "Agent pointer up", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[AgentInput] pointer up rejected requestID=\(requestID) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        endPointerInteraction(at: phonePoint, click: false)
+        postPointerFeedback(kind: "agentUp", point: clampPhonePointToSurface(phonePoint))
+        return .accepted("Pointer up accepted")
+    }
+
+    func agentClick(at phonePoint: CGPoint, holdMilliseconds: Int, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] click requested requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint)) holdMs=\(holdMilliseconds)")
+        guard agentCanStartHIDCommand(source: "Agent click", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[AgentInput] click rejected requestID=\(requestID) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        let clampedHoldMilliseconds = min(
+            max(holdMilliseconds, EasyAgentHIDTiming.minimumPointerHoldMilliseconds),
+            EasyAgentHIDTiming.maximumPointerHoldMilliseconds
+        )
+        if clampedHoldMilliseconds != holdMilliseconds {
+            appendLog("[AgentInput] click hold clamped requestID=\(requestID) requested=\(holdMilliseconds) applied=\(clampedHoldMilliseconds)")
+        }
+
+        beginPointerInteraction(at: phonePoint)
+        postPointerFeedback(kind: "agentClickDown", point: clampPhonePointToSurface(phonePoint))
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(clampedHoldMilliseconds)) { [weak self] in
+            guard let self else { return }
+            self.appendLog("[AgentInput] click release requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint)) holdMs=\(clampedHoldMilliseconds)")
+            self.endPointerInteraction(at: phonePoint, click: true)
+            self.postPointerFeedback(kind: "agentClickUp", point: self.clampPhonePointToSurface(phonePoint))
+        }
+
+        return .accepted("Click scheduled", details: ["holdMs": String(clampedHoldMilliseconds)])
+    }
+
+    func agentDragStep(to phonePoint: CGPoint, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] drag step requested requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+        guard agentCanStartHIDCommand(source: "Agent drag", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[AgentInput] drag step rejected requestID=\(requestID) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        dragPointer(to: phonePoint)
+        postPointerFeedback(kind: "agentDrag", point: clampPhonePointToSurface(phonePoint))
+        return .accepted("Drag step accepted")
+    }
+
+    func agentScroll(deltaY: CGFloat, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] scroll requested requestID=\(requestID) deltaY=\(deltaY)")
+        guard agentCanStartHIDCommand(source: "Agent scroll", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard deltaY.isFinite else {
+            appendLog("[AgentInput] scroll rejected requestID=\(requestID) reason=non-finite-delta deltaY=\(deltaY)")
+            return .rejected("Scroll deltaY is not finite")
+        }
+
+        scrollPointer(deltaY: deltaY)
+        return .accepted("Scroll accepted")
+    }
+
+    func agentTypeText(_ text: String, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] type requested requestID=\(requestID) characters=\(text.count)")
+        guard agentCanStartHIDCommand(source: "Agent type", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard !text.isEmpty else {
+            appendLog("[AgentInput] type rejected requestID=\(requestID) reason=empty-text")
+            return .rejected("Text is empty")
+        }
+
+        var mappedCharacters: [(code: UInt8, modifiers: UInt8)] = []
+        var unsupportedScalars: [String] = []
+        for character in text {
+            if let mapped = Self.charToHID(character) {
+                mappedCharacters.append(mapped)
+            } else {
+                unsupportedScalars.append(String(character))
+            }
+        }
+
+        guard !mappedCharacters.isEmpty else {
+            appendLog("[AgentInput] type rejected requestID=\(requestID) reason=no-supported-characters unsupported=\(unsupportedScalars.joined(separator: ","))")
+            return .rejected("Text contains no supported HID characters")
+        }
+
+        if !unsupportedScalars.isEmpty {
+            appendLog("[AgentInput] type partial requestID=\(requestID) unsupported=\(unsupportedScalars.joined(separator: ","))")
+        }
+
+        for (index, mapped) in mappedCharacters.enumerated() {
+            let pressDelay = EasyAgentHIDTiming.typingPressDelay(for: index)
+            let releaseDelay = EasyAgentHIDTiming.typingReleaseDelay(for: index)
+            DispatchQueue.main.asyncAfter(deadline: .now() + pressDelay) { [weak self] in
+                guard let self else { return }
+                _ = self.writeKeyboardReport(
+                    modifiers: mapped.modifiers,
+                    keys: [mapped.code],
+                    source: "Agent type press requestID=\(requestID) index=\(index)"
+                )
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + releaseDelay) { [weak self] in
+                guard let self else { return }
+                _ = self.writeKeyboardReport(
+                    modifiers: 0,
+                    keys: [],
+                    source: "Agent type release requestID=\(requestID) index=\(index)"
+                )
+            }
+        }
+
+        let completionDelay = EasyAgentHIDTiming.typingCompletionDelay(for: mappedCharacters.count)
+        DispatchQueue.main.asyncAfter(deadline: .now() + completionDelay) { [weak self] in
+            self?.appendLog("[AgentInput] type completed requestID=\(requestID) sentCharacters=\(mappedCharacters.count) unsupportedCharacters=\(unsupportedScalars.count)")
+        }
+
+        return .accepted("Typing scheduled", details: [
+            "requestedCharacters": String(text.count),
+            "scheduledCharacters": String(mappedCharacters.count),
+            "unsupportedCharacters": String(unsupportedScalars.count),
+        ])
+    }
+
+    func agentPressKey(hidUsage: UInt8, modifiers: UInt8, holdMilliseconds: Int, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[AgentInput] key requested requestID=\(requestID) hidUsage=0x\(String(format: "%02X", hidUsage)) modifiers=0x\(String(format: "%02X", modifiers)) holdMs=\(holdMilliseconds)")
+        guard agentCanStartHIDCommand(source: "Agent key", requestID: requestID) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard hidUsage != 0 else {
+            appendLog("[AgentInput] key rejected requestID=\(requestID) reason=zero-hid-usage")
+            return .rejected("HID usage cannot be zero")
+        }
+
+        let clampedHoldMilliseconds = min(
+            max(holdMilliseconds, EasyAgentHIDTiming.minimumKeyHoldMilliseconds),
+            EasyAgentHIDTiming.maximumKeyHoldMilliseconds
+        )
+        if clampedHoldMilliseconds != holdMilliseconds {
+            appendLog("[AgentInput] key hold clamped requestID=\(requestID) requested=\(holdMilliseconds) applied=\(clampedHoldMilliseconds)")
+        }
+
+        let pressed = writeKeyboardReport(
+            modifiers: modifiers,
+            keys: [hidUsage],
+            source: "Agent key press requestID=\(requestID)"
+        )
+        guard pressed else {
+            appendLog("[AgentInput] key press failed requestID=\(requestID)")
+            return .rejected("Keyboard press was not written")
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(clampedHoldMilliseconds)) { [weak self] in
+            guard let self else { return }
+            _ = self.writeKeyboardReport(
+                modifiers: 0,
+                keys: [],
+                source: "Agent key release requestID=\(requestID)"
+            )
+        }
+
+        return .accepted("Key scheduled", details: ["holdMs": String(clampedHoldMilliseconds)])
+    }
+
+    private func agentCanStartHIDCommand(source: String, requestID: String) -> Bool {
+        guard interruptChannel != nil else {
+            appendLog("[AgentInput] \(source) rejected requestID=\(requestID) reason=no-interrupt-channel connected=\(isBluetoothHIDConnected)")
+            return false
+        }
+        guard replayKitInputForwardingEnabled else {
+            appendLog("[AgentInput] \(source) rejected requestID=\(requestID) reason=input-gate-disabled gateReason=\(replayKitInputForwardingReason)")
+            return false
+        }
+        guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
+            appendLog("[AgentInput] \(source) rejected requestID=\(requestID) reason=invalid-pointer-surface surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize))")
+            return false
+        }
+        appendLog("[AgentInput] \(source) accepted requestID=\(requestID) surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) absolute=\(absolutePointerTransportEnabled)")
+        return true
+    }
+
+    func automationReplayPointer(
+        phase: String,
+        phonePoint: CGPoint,
+        buttons: Int?,
+        requestID: String
+    ) -> EasyAgentCommandResult {
+        appendLog("[EasyAutomationReplay] pointer requested requestID=\(requestID) phase=\(phase) point=\(InputSurfaceDiagnostics.pointString(phonePoint)) buttons=\(buttons.map(String.init) ?? "nil")")
+        guard automationReplayCanForward(
+            source: "pointer",
+            requestID: requestID,
+            requiresPointerSurface: true
+        ) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard InputSurfaceDiagnostics.isFinite(phonePoint) else {
+            appendLog("[EasyAutomationReplay] pointer rejected requestID=\(requestID) phase=\(phase) reason=non-finite-point point=\(InputSurfaceDiagnostics.pointString(phonePoint))")
+            return .rejected("Pointer point is not finite")
+        }
+
+        let buttonByte = UInt8(clamping: buttons ?? 0)
+        switch phase {
+        case "down":
+            beginPointerInteraction(at: phonePoint)
+            postPointerFeedback(kind: "automationReplayDown", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer down replayed")
+        case "up":
+            endPointerInteraction(at: phonePoint, click: true)
+            postPointerFeedback(kind: "automationReplayUp", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer up replayed")
+        case "move":
+            movePointer(
+                to: phonePoint,
+                reason: "automation-replay-move:\(requestID)",
+                buttons: buttonByte,
+                origin: .predicted
+            )
+            postPointerFeedback(kind: "automationReplayMove", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer move replayed")
+        case "dragStart":
+            if isPointerButtonDown {
+                appendLog("[EasyAutomationReplay] dragStart reused active pointer button requestID=\(requestID)")
+            } else {
+                beginPointerInteraction(at: phonePoint)
+            }
+            postPointerFeedback(kind: "automationReplayDragStart", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer drag start replayed")
+        case "dragMove":
+            if !isPointerButtonDown {
+                appendLog("[EasyAutomationReplay] dragMove recovered missing pointer button requestID=\(requestID)")
+                beginPointerInteraction(at: phonePoint)
+            } else {
+                dragPointer(to: phonePoint)
+            }
+            postPointerFeedback(kind: "automationReplayDrag", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer drag move replayed")
+        case "dragEnd":
+            if isPointerButtonDown {
+                endPointerInteraction(at: phonePoint, click: false)
+            } else {
+                appendLog("[EasyAutomationReplay] dragEnd found no pointer button down requestID=\(requestID); sending release")
+                sendAllPointerButtonsReleased(reason: "automation-replay-dragEnd:\(requestID)")
+            }
+            postPointerFeedback(kind: "automationReplayDragEnd", point: clampPhonePointToSurface(phonePoint))
+            return .accepted("Pointer drag end replayed")
+        default:
+            appendLog("[EasyAutomationReplay] pointer rejected requestID=\(requestID) reason=unsupported-phase phase=\(phase)")
+            return .rejected("Unsupported pointer phase")
+        }
+    }
+
+    func automationReplayMouseWheel(wheel: Int8, requestID: String) -> EasyAgentCommandResult {
+        appendLog("[EasyAutomationReplay] wheel requested requestID=\(requestID) wheel=\(wheel)")
+        guard automationReplayCanForward(
+            source: "mouseWheel",
+            requestID: requestID,
+            requiresPointerSurface: false
+        ) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        sendMouseReport(buttons: 0, dx: 0, dy: 0, dz: 0, wheel: wheel)
+        return .accepted("Mouse wheel replayed")
+    }
+
+    func automationReplayKeyboardReport(
+        modifiers: UInt8,
+        keys: [UInt8],
+        requestID: String
+    ) -> EasyAgentCommandResult {
+        appendLog("[EasyAutomationReplay] keyboard requested requestID=\(requestID) modifiers=0x\(String(format: "%02X", modifiers)) keys=\(Self.hidKeyListDescription(keys))")
+        guard automationReplayCanForward(
+            source: "keyboard",
+            requestID: requestID,
+            requiresPointerSurface: false
+        ) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        let written = writeKeyboardReport(
+            modifiers: modifiers,
+            keys: keys,
+            source: "AutomationReplay keyboard requestID=\(requestID)"
+        )
+        guard written else {
+            appendLog("[EasyAutomationReplay] keyboard rejected requestID=\(requestID) reason=write-failed")
+            return .rejected("Keyboard report was not written")
+        }
+        return .accepted("Keyboard report replayed")
+    }
+
+    func automationReplayConsumerControlValue(
+        _ value: UInt16,
+        requestID: String
+    ) -> EasyAgentCommandResult {
+        appendLog("[EasyAutomationReplay] consumer requested requestID=\(requestID) value=0x\(String(format: "%04X", value))")
+        guard automationReplayCanForward(
+            source: "consumerControl",
+            requestID: requestID,
+            requiresPointerSurface: false
+        ) else {
+            return .rejected("Bluetooth HID input is not ready")
+        }
+        guard let channel = interruptChannel else {
+            appendLog("[EasyAutomationReplay] consumer rejected requestID=\(requestID) reason=no-interrupt-channel")
+            return .rejected("Bluetooth interrupt channel is not connected")
+        }
+        var report: [UInt8] = [
+            0xA1,
+            0x02,
+            UInt8(value & 0x00FF),
+            UInt8((value & 0xFF00) >> 8),
+        ]
+        let result = channel.writeAsync(&report, length: UInt16(report.count), refcon: nil)
+        guard result == kIOReturnSuccess else {
+            appendLog("[EasyAutomationReplay] consumer write failed requestID=\(requestID) result=\(result)")
+            return .rejected("Consumer control report was not written")
+        }
+        return .accepted("Consumer control replayed")
+    }
+
+    private func automationReplayCanForward(
+        source: String,
+        requestID: String,
+        requiresPointerSurface: Bool
+    ) -> Bool {
+        guard interruptChannel != nil else {
+            appendLog("[EasyAutomationReplay] \(source) rejected requestID=\(requestID) reason=no-interrupt-channel connected=\(isBluetoothHIDConnected)")
+            return false
+        }
+        guard replayKitInputForwardingEnabled else {
+            appendLog("[EasyAutomationReplay] \(source) rejected requestID=\(requestID) reason=input-gate-disabled gateReason=\(replayKitInputForwardingReason)")
+            return false
+        }
+        if requiresPointerSurface {
+            guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
+                appendLog("[EasyAutomationReplay] \(source) rejected requestID=\(requestID) reason=invalid-pointer-surface surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize))")
+                return false
+            }
+        }
+        appendLog("[EasyAutomationReplay] \(source) accepted requestID=\(requestID) surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) absolute=\(absolutePointerTransportEnabled)")
+        return true
     }
 
     func sendConsumerControlCommand(bit: UInt8, name: String) {
@@ -3097,6 +3559,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         if pressResult != kIOReturnSuccess {
             appendLog("[Consumer] Press writeAsync failed: \(pressResult)")
         }
+        postAutomationInputObserved(
+            kind: "consumerControl",
+            phase: "consumerPress",
+            source: source,
+            phonePoint: virtualPointerPoint,
+            details: [
+                "bit": String(bit),
+                "value": String(format: "0x%04X", value),
+                "writeResult": String(pressResult),
+                "bypassInputGate": String(bypassInputGate),
+            ]
+        )
 
         // Release after 50ms (on main thread to avoid concurrent writes)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
@@ -3111,6 +3585,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             if releaseResult != kIOReturnSuccess {
                 self.appendLog("[Consumer] Release writeAsync failed: \(releaseResult)")
             }
+            self.postAutomationInputObserved(
+                kind: "consumerControl",
+                phase: "consumerRelease",
+                source: source,
+                phonePoint: self.virtualPointerPoint,
+                details: [
+                    "bit": String(bit),
+                    "value": "0x0000",
+                    "writeResult": String(releaseResult),
+                    "bypassInputGate": String(bypassInputGate),
+                ]
+            )
         }
     }
 
@@ -3248,6 +3734,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         appendLog("[Mouse] Starting relative NSEvent monitor for mouse passthrough")
         appendLog("[Mouse] Input mode clutchEnabled=\(easyMouseClutchModeEnabled)")
+        appendLog("[MouseLive] monitor starting enabled=\(easyLiveMouseEnabled) focusRequirement=active-key-easy-window appActive=\(NSApplication.shared.isActive) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false)")
         appendLog("[TrackpadSwipeDrag] mouse monitor starting enabled=\(trackpadSwipeToDragEnabled) mode=\(trackpadSwipeToDragMode) phase=\(trackpadSwipeDragPhase.rawValue)")
         appendLog("[PointerTransport] activeVariant=\(easyPointerSpikeVariant) spikeEnabled=\(easyPointerSpikeEnabled) absoluteMouseReport=\(absolutePointerTransportEnabled) absoluteReportID=\(Self.absolutePointerReportID)")
         if easyMouseClutchModeEnabled {
@@ -3290,6 +3777,17 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             inputEventDropCount += 1
             if inputEventDropCount <= 5 || inputEventDropCount % 100 == 0 {
                 appendLog("[InputSurface] \(source) drop: Easy input window is not bound eventWindow=\(event.window?.windowNumber ?? -1)")
+                recordInputSurfaceDiagnostic(
+                    event: "inputEventDrop",
+                    reason: "missing-target-window",
+                    details: [
+                        "source": source,
+                        "eventType": String(event.type.rawValue),
+                        "eventWindow": event.window.map { String($0.windowNumber) } ?? "nil",
+                        "appActive": String(NSApplication.shared.isActive),
+                    ],
+                    severity: "warning"
+                )
             }
             return false
         }
@@ -3298,23 +3796,97 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             inputEventDropCount += 1
             if inputEventDropCount <= 5 || inputEventDropCount % 100 == 0 {
                 appendLog("[InputSurface] \(source) drop: eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow.windowNumber) targetKey=\(targetInputWindow.isKeyWindow)")
+                recordInputSurfaceDiagnostic(
+                    event: "inputEventDrop",
+                    reason: "event-window-mismatch",
+                    details: [
+                        "source": source,
+                        "eventType": String(event.type.rawValue),
+                        "eventWindow": event.window.map { String($0.windowNumber) } ?? "nil",
+                        "targetWindow": String(targetInputWindow.windowNumber),
+                        "targetWindowKey": String(targetInputWindow.isKeyWindow),
+                        "appActive": String(NSApplication.shared.isActive),
+                    ],
+                    severity: "warning"
+                )
             }
             return false
         }
 
         guard targetInputWindow.isKeyWindow else {
+            if source == "Mouse", Self.isMouseForwardingEvent(event) {
+                nonKeyMouseForwardCount += 1
+                if nonKeyMouseForwardCount <= 5 || nonKeyMouseForwardCount % 100 == 0 {
+                    appendLog("[InputSurface] Mouse forwarding allowed while target window is not key eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow.windowNumber) appActive=\(NSApplication.shared.isActive) count=\(nonKeyMouseForwardCount)")
+                    recordInputSurfaceDiagnostic(
+                        event: "inputEventForwarded",
+                        reason: "mouse-target-window-not-key",
+                        details: [
+                            "source": source,
+                            "eventType": String(event.type.rawValue),
+                            "eventWindow": event.window.map { String($0.windowNumber) } ?? "nil",
+                            "targetWindow": String(targetInputWindow.windowNumber),
+                            "targetWindowKey": String(targetInputWindow.isKeyWindow),
+                            "appActive": String(NSApplication.shared.isActive),
+                            "nonKeyMouseForwardCount": String(nonKeyMouseForwardCount),
+                        ]
+                    )
+                }
+                if inputEventDropCount != 0 {
+                    appendLog("[InputSurface] \(source) forwarding resumed after drops=\(inputEventDropCount) branch=non-key-mouse")
+                    inputEventDropCount = 0
+                }
+                return true
+            }
+
             inputEventDropCount += 1
             if inputEventDropCount <= 5 || inputEventDropCount % 100 == 0 {
                 appendLog("[InputSurface] \(source) drop: Easy input window is not key targetWindow=\(targetInputWindow.windowNumber)")
+                recordInputSurfaceDiagnostic(
+                    event: "inputEventDrop",
+                    reason: "target-window-not-key",
+                    details: [
+                        "source": source,
+                        "eventType": String(event.type.rawValue),
+                        "eventWindow": event.window.map { String($0.windowNumber) } ?? "nil",
+                        "targetWindow": String(targetInputWindow.windowNumber),
+                        "targetWindowKey": String(targetInputWindow.isKeyWindow),
+                        "appActive": String(NSApplication.shared.isActive),
+                    ],
+                    severity: "warning"
+                )
             }
             return false
         }
 
+        if nonKeyMouseForwardCount != 0 {
+            appendLog("[InputSurface] \(source) target window became key after nonKeyMouseForwards=\(nonKeyMouseForwardCount)")
+            nonKeyMouseForwardCount = 0
+        }
         if inputEventDropCount != 0 {
             appendLog("[InputSurface] \(source) forwarding resumed after drops=\(inputEventDropCount)")
             inputEventDropCount = 0
         }
         return true
+    }
+
+    private static func isMouseForwardingEvent(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .mouseMoved,
+             .leftMouseDragged,
+             .rightMouseDragged,
+             .otherMouseDragged,
+             .leftMouseDown,
+             .leftMouseUp,
+             .rightMouseDown,
+             .rightMouseUp,
+             .otherMouseDown,
+             .otherMouseUp,
+             .scrollWheel:
+            return true
+        default:
+            return false
+        }
     }
 
     private func stopMousePassthrough() {
@@ -3361,16 +3933,27 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         mouseEventCount += 1
         maybeLogMousePerformance(reason: "event")
         let shouldLog = mouseEventCount <= 5 || mouseEventCount % 100 == 0
-        let movementForwardingEnabled = easyPointerSpikeEnabled ? isRightMousePressed : self.movementForwardingEnabled
+        let liveMouseFocus = liveMouseFocusState(for: event)
+        let liveMouseMovementForwarding = easyLiveMouseEnabled && liveMouseFocus.active
+        let movementForwardingEnabled = easyPointerSpikeEnabled
+            ? (liveMouseMovementForwarding || isRightMousePressed)
+            : (liveMouseMovementForwarding || self.movementForwardingEnabled)
+
+        if event.type == .leftMouseDown {
+            appendLog("[MouseFirstClick] leftDown received eventNumber=\(event.eventNumber) appActive=\(NSApplication.shared.isActive) eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false) gate=\(replayKitInputForwardingEnabled) passthrough=\(mousePassthroughEnabled) liveMouse=\(easyLiveMouseEnabled) liveFocus=\(liveMouseFocus.active) liveReason=\(liveMouseFocus.reason) pointerSpike=\(easyPointerSpikeEnabled) absoluteMouseReport=\(absolutePointerTransportEnabled) inFlight=\(interruptWritesInFlight)")
+        }
 
         switch event.type {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             let isAbsoluteLeftDragEvent = absolutePointerTransportEnabled && event.type == .leftMouseDragged && isLeftMousePressedForSwipe
             guard movementForwardingEnabled || isAbsoluteLeftDragEvent else {
                 if shouldLog {
-                    appendLog("[Mouse] Event #\(mouseEventCount): move ignored because right-button clutch is not active clutchEnabled=\(easyMouseClutchModeEnabled) absoluteLeftDrag=\(isAbsoluteLeftDragEvent)")
+                    appendLog("[MouseLive] Event #\(mouseEventCount): move ignored reason=\(liveMouseFocus.reason) liveMouse=\(easyLiveMouseEnabled) liveFocus=\(liveMouseFocus.active) clutchEnabled=\(easyMouseClutchModeEnabled) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) rightPressed=\(isRightMousePressed) eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false)")
                 }
                 return
+            }
+            if liveMouseMovementForwarding && shouldLog {
+                appendLog("[MouseLive] Event #\(mouseEventCount): live movement accepted reason=\(liveMouseFocus.reason) pointerSpike=\(easyPointerSpikeEnabled) absoluteMouseReport=\(absolutePointerTransportEnabled) eventType=\(event.type.rawValue) rightPressed=\(isRightMousePressed)")
             }
 
             if absolutePointerTransportEnabled {
@@ -3396,18 +3979,36 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
                 let dragActive = isDragGestureInProgress && isLeftMousePressedForSwipe && isSwipeButtonDownOnPhone
                 let forwardedButtons: UInt8 = dragActive ? 0x01 : 0x00
-                postPointerFeedback(kind: dragActive ? "dragMoveAbsolute" : "clutchMoveAbsolute", point: mapping.phonePoint)
-                appendLog(
-                    "[PointerABS] movement event #\(mouseEventCount) " +
-                    "window=\(InputSurfaceDiagnostics.pointString(mapping.eventLocationInWindow)) " +
-                    "local=\(InputSurfaceDiagnostics.pointString(mapping.localPoint)) " +
-                    "phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
-                    "buttons=\(forwardedButtons) dragActive=\(dragActive) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) clamped=\(mapping.wasClampedToSurface)"
-                )
+                let movementKind = dragActive ? "dragMoveAbsolute" : (liveMouseMovementForwarding ? "liveMoveAbsolute" : "clutchMoveAbsolute")
+                postPointerFeedback(kind: movementKind, point: mapping.phonePoint)
+                if shouldLog {
+                    appendLog(
+                        "[PointerABS] movement event #\(mouseEventCount) " +
+                        "window=\(InputSurfaceDiagnostics.pointString(mapping.eventLocationInWindow)) " +
+                        "local=\(InputSurfaceDiagnostics.pointString(mapping.localPoint)) " +
+                        "phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
+                        "buttons=\(forwardedButtons) dragActive=\(dragActive) liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) clamped=\(mapping.wasClampedToSurface)"
+                    )
+                }
                 sendAbsolutePointerReport(
                     point: mapping.phonePoint,
                     buttons: forwardedButtons,
-                    reason: dragActive ? "dragMoveAbsolute" : "clutchMoveAbsolute"
+                    reason: movementKind
+                )
+                postAutomationInputObserved(
+                    kind: "pointer",
+                    phase: dragActive ? "dragMove" : "move",
+                    source: "human-mouse-absolute",
+                    event: event,
+                    mapping: mapping,
+                    buttons: forwardedButtons,
+                    details: [
+                        "dragActive": String(dragActive),
+                        "liveMouse": String(liveMouseMovementForwarding),
+                        "liveReason": liveMouseFocus.reason,
+                        "absoluteLeftDrag": String(isAbsoluteLeftDragEvent),
+                        "wasClampedToSurface": String(mapping.wasClampedToSurface),
+                    ]
                 )
                 return
             }
@@ -3441,17 +4042,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             if dx != 0 || dy != 0 {
                 let dragActive = isDragGestureInProgress && isLeftMousePressedForSwipe && isRightMousePressed
                 let forwardedButtons: UInt8 = dragActive ? 0x01 : 0x00
+                let movementKind = dragActive ? "dragMove" : (liveMouseMovementForwarding ? "liveMove" : "clutchMove")
                 lastPointerReportDelta = CGPoint(x: dx, y: dy)
                 calibrationReportDeltaSinceLastSample.x += dx
                 calibrationReportDeltaSinceLastSample.y += dy
                 virtualPointerPoint.x = min(max(virtualPointerPoint.x + (dx * pointerTransportScaleX), 0), pointerSurfaceSize.width)
                 virtualPointerPoint.y = min(max(virtualPointerPoint.y + (dy * pointerTransportScaleY), 0), pointerSurfaceSize.height)
-                postPointerFeedback(kind: dragActive ? "dragMove" : "clutchMove", point: virtualPointerPoint)
+                postPointerFeedback(kind: movementKind, point: virtualPointerPoint)
                 if shouldLog {
-                    appendLog("[Mouse] Event #\(mouseEventCount): move raw=\(InputSurfaceDiagnostics.pointString(rawMouseDelta)) rotated=\(InputSurfaceDiagnostics.pointString(rotatedMouseDelta)) rotation=\(inputSurfaceRotationDegrees) report=(\(dx),\(dy)) virtual=\(InputSurfaceDiagnostics.pointString(virtualPointerPoint)) dragActive=\(dragActive) forwardedButtons=\(forwardedButtons) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed)")
+                    appendLog("[Mouse] Event #\(mouseEventCount): move raw=\(InputSurfaceDiagnostics.pointString(rawMouseDelta)) rotated=\(InputSurfaceDiagnostics.pointString(rotatedMouseDelta)) rotation=\(inputSurfaceRotationDegrees) report=(\(dx),\(dy)) virtual=\(InputSurfaceDiagnostics.pointString(virtualPointerPoint)) dragActive=\(dragActive) liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) forwardedButtons=\(forwardedButtons) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed)")
                     recordInputSurfaceDiagnostic(
                         event: "relativeMouseDeltaMapped",
-                        reason: dragActive ? "drag-move" : "clutch-move",
+                        reason: movementKind,
                         details: [
                             "rawDelta": InputSurfaceDiagnostics.pointString(rawMouseDelta),
                             "rotatedDelta": InputSurfaceDiagnostics.pointString(rotatedMouseDelta),
@@ -3459,6 +4061,8 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                             "reportDY": FrameDropDiagnostics.format(Double(dy), digits: 4),
                             "virtualPointer": InputSurfaceDiagnostics.pointString(virtualPointerPoint),
                             "dragActive": String(dragActive),
+                            "liveMouse": String(liveMouseMovementForwarding),
+                            "liveReason": liveMouseFocus.reason,
                             "forwardedButtons": String(forwardedButtons),
                             "clutchEnabled": String(easyMouseClutchModeEnabled),
                             "clutchLatched": String(isMouseMovementClutched),
@@ -3474,7 +4078,24 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     sendMouseReport(buttons: 0x01, dx: 0, dy: 0, dz: 0, wheel: 0)
                     appendLog("[Mouse] Drag button DOWN before movement")
                 }
-                sendMouseDeltaWithRemainder(dx: dx, dy: dy, buttons: forwardedButtons, reason: dragActive ? "dragMove" : "clutchMove")
+                sendMouseDeltaWithRemainder(dx: dx, dy: dy, buttons: forwardedButtons, reason: movementKind)
+                postAutomationInputObserved(
+                    kind: "pointer",
+                    phase: dragActive ? "dragMove" : "move",
+                    source: "human-mouse-relative",
+                    event: event,
+                    phonePoint: virtualPointerPoint,
+                    buttons: forwardedButtons,
+                    details: [
+                        "rawDeltaX": FrameDropDiagnostics.format(Double(rawMouseDelta.x), digits: 4),
+                        "rawDeltaY": FrameDropDiagnostics.format(Double(rawMouseDelta.y), digits: 4),
+                        "reportDeltaX": FrameDropDiagnostics.format(Double(dx), digits: 4),
+                        "reportDeltaY": FrameDropDiagnostics.format(Double(dy), digits: 4),
+                        "dragActive": String(dragActive),
+                        "liveMouse": String(liveMouseMovementForwarding),
+                        "liveReason": liveMouseFocus.reason,
+                    ]
+                )
             }
 
         case .leftMouseDown:
@@ -3499,6 +4120,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     isSwipeButtonDownOnPhone = true
                     appendLog("[PointerABS] primary button DOWN tracked for possible click-or-drag")
                 }
+                postAutomationInputObserved(
+                    kind: "pointer",
+                    phase: "down",
+                    source: "human-mouse",
+                    event: event,
+                    mapping: mapping,
+                    phonePoint: mapping?.phonePoint ?? virtualPointerPoint,
+                    buttons: 0x01,
+                    details: [
+                        "dragStart": String(shouldStartDrag),
+                        "rightPressed": String(isRightMousePressed),
+                    ]
+                )
                 appendLog("[Mouse] Tap button DOWN")
             }
             appendLog("[Mouse] Event #\(mouseEventCount): left DOWN btns=\(mouseButtonState) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed) movementForwarding=\(movementForwardingEnabled) dragStart=\(shouldStartDrag) dragInProgress=\(isDragGestureInProgress)")
@@ -3525,6 +4159,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     isSwipeButtonDownOnPhone = false
                     appendLog("[PointerABS] primary button UP tracked for tap release")
                 }
+                postAutomationInputObserved(
+                    kind: "pointer",
+                    phase: "up",
+                    source: "human-mouse",
+                    event: event,
+                    mapping: mapping,
+                    phonePoint: mapping?.phonePoint ?? virtualPointerPoint,
+                    buttons: 0x00,
+                    details: [
+                        "dragSequence": String(wasDragSequence),
+                    ]
+                )
                 appendLog("[Mouse] Tap button UP")
             }
 
@@ -3590,6 +4236,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                 }
                 sendMouseReport(buttons: mouseButtonState, dx: 0, dy: 0, dz: 0,
                                 wheel: Int8(clamping: Int(boundedWheelDelta.rounded(.towardZero))))
+                postAutomationInputObserved(
+                    kind: "scroll",
+                    phase: "scroll",
+                    source: "human-scroll",
+                    event: event,
+                    phonePoint: virtualPointerPoint,
+                    buttons: mouseButtonState,
+                    details: [
+                        "rawDeltaY": FrameDropDiagnostics.format(Double(scrollDelta), digits: 4),
+                        "invertedDeltaY": FrameDropDiagnostics.format(Double(inverted), digits: 4),
+                        "boundedWheelDelta": FrameDropDiagnostics.format(Double(boundedWheelDelta), digits: 4),
+                    ]
+                )
             }
 
         default:
@@ -4432,6 +5091,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             note: "ABS left-drag start \(trigger)"
         )
 
+        let recoveredButtonDown = !isSwipeButtonDownOnPhone
         if isSwipeButtonDownOnPhone {
             appendLog("[PointerABS] left-drag start trigger=\(trigger) continuing existing primary button down at phone=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) clamped=\(mapping.wasClampedToSurface)")
         } else {
@@ -4439,6 +5099,17 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             appendLog("[PointerABS] left-drag start trigger=\(trigger) recovered missing primary button state; sending button down at phone=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) clamped=\(mapping.wasClampedToSurface)")
             sendPointerButtonReport(buttons: 0x01, mapping: mapping, reason: "absolute-left-drag-recovery-button-down:\(trigger)")
         }
+        postAutomationInputObserved(
+            kind: "pointer",
+            phase: "dragStart",
+            source: "human-mouse-absolute:\(trigger)",
+            mapping: mapping,
+            buttons: 0x01,
+            details: [
+                "wasClampedToSurface": String(mapping.wasClampedToSurface),
+                "recoveredButtonDown": String(recoveredButtonDown),
+            ]
+        )
     }
 
     private func startDragGestureIfNeeded(mapping: PointerInputMapping?, trigger: String) {
@@ -4456,6 +5127,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         didCurrentLeftPressBecomeDrag = true
         isDragGestureInProgress = true
         postPointerFeedback(kind: "dragStart", point: mapping?.phonePoint ?? virtualPointerPoint)
+        postAutomationInputObserved(
+            kind: "pointer",
+            phase: "dragStart",
+            source: "human-mouse:\(trigger)",
+            mapping: mapping,
+            phonePoint: mapping?.phonePoint ?? virtualPointerPoint,
+            buttons: 0x01,
+            details: [
+                "mapped": String(mapping != nil),
+                "trigger": trigger,
+            ]
+        )
         if isSwipeButtonDownOnPhone {
             appendLog("[Mouse] Drag button already down trigger=\(trigger)")
             return
@@ -4471,6 +5154,18 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         postPointerFeedback(kind: "dragEnd", point: releasePoint)
         guard isSwipeButtonDownOnPhone else {
             isDragGestureInProgress = false
+            postAutomationInputObserved(
+                kind: "pointer",
+                phase: "dragEnd",
+                source: "human-mouse:\(trigger)",
+                mapping: mapping,
+                phonePoint: releasePoint,
+                buttons: 0x00,
+                details: [
+                    "mapped": String(mapping != nil),
+                    "hadButtonDown": "false",
+                ]
+            )
             appendLog("[Mouse] Drag finish trigger=\(trigger) found no phone button down")
             return
         }
@@ -4487,6 +5182,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             note: "Drag end \(trigger)"
         )
         sendPointerButtonReport(buttons: 0x00, mapping: mapping, reason: "drag-button-up:\(trigger)")
+        postAutomationInputObserved(
+            kind: "pointer",
+            phase: "dragEnd",
+            source: "human-mouse:\(trigger)",
+            mapping: mapping,
+            phonePoint: releasePoint,
+            buttons: 0x00,
+            details: [
+                "mapped": String(mapping != nil),
+                "hadButtonDown": "true",
+                "wasClampedToSurface": String(mapping?.wasClampedToSurface ?? false),
+            ]
+        )
         appendLog("[Mouse] Drag button UP trigger=\(trigger) release=\(InputSurfaceDiagnostics.pointString(releasePoint)) mapped=\(mapping != nil) clamped=\(mapping?.wasClampedToSurface ?? false)")
     }
 
@@ -4785,6 +5493,68 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
     }
 
+    private func postAutomationInputObserved(
+        kind: String,
+        phase: String,
+        source: String,
+        event: NSEvent? = nil,
+        mapping: PointerInputMapping? = nil,
+        phonePoint: CGPoint? = nil,
+        buttons: UInt8? = nil,
+        details: [String: String] = [:]
+    ) {
+        guard EasyAutomationRecorderActivity.shared.isRecording else { return }
+
+        var userInfo: [String: Any] = [
+            "kind": kind,
+            "phase": phase,
+            "source": source,
+            "timestamp": Date().timeIntervalSince1970,
+            "displayRotationDegrees": inputSurfaceRotationDegrees,
+            "absolutePointerTransportEnabled": absolutePointerTransportEnabled,
+            "pointerSurfaceWidth": pointerSurfaceSize.width,
+            "pointerSurfaceHeight": pointerSurfaceSize.height,
+            "virtualPointerPointX": virtualPointerPoint.x,
+            "virtualPointerPointY": virtualPointerPoint.y,
+            "details": details,
+        ]
+
+        if let buttons {
+            userInfo["buttons"] = Int(buttons)
+        }
+        if let event {
+            userInfo["eventType"] = String(event.type.rawValue)
+            userInfo["eventNumber"] = event.eventNumber
+            userInfo["eventLocationInWindowX"] = event.locationInWindow.x
+            userInfo["eventLocationInWindowY"] = event.locationInWindow.y
+        }
+
+        let resolvedPhonePoint = phonePoint ?? mapping?.phonePoint
+        if let resolvedPhonePoint {
+            userInfo["phonePointX"] = resolvedPhonePoint.x
+            userInfo["phonePointY"] = resolvedPhonePoint.y
+        }
+        if let mapping {
+            userInfo["localPointX"] = mapping.localPoint.x
+            userInfo["localPointY"] = mapping.localPoint.y
+            userInfo["normalizedPointX"] = mapping.normalizedPoint.x
+            userInfo["normalizedPointY"] = mapping.normalizedPoint.y
+            userInfo["surfaceFrameInWindowX"] = mapping.surfaceFrameInWindow.minX
+            userInfo["surfaceFrameInWindowY"] = mapping.surfaceFrameInWindow.minY
+            userInfo["surfaceFrameInWindowWidth"] = mapping.surfaceFrameInWindow.width
+            userInfo["surfaceFrameInWindowHeight"] = mapping.surfaceFrameInWindow.height
+        }
+        if let inputSurfaceFrameInWindow {
+            userInfo["inputSurfaceFrameInWindowX"] = inputSurfaceFrameInWindow.minX
+            userInfo["inputSurfaceFrameInWindowY"] = inputSurfaceFrameInWindow.minY
+            userInfo["inputSurfaceFrameInWindowWidth"] = inputSurfaceFrameInWindow.width
+            userInfo["inputSurfaceFrameInWindowHeight"] = inputSurfaceFrameInWindow.height
+        }
+
+        appendLog("[EasyAutomationInput] observed kind=\(kind) phase=\(phase) source=\(source) mapped=\(mapping != nil) phone=\(resolvedPhonePoint.map(InputSurfaceDiagnostics.pointString) ?? "nil") details=\(details)")
+        NotificationCenter.default.post(name: .easyAutomationInputObserved, object: self, userInfo: userInfo)
+    }
+
     private func postPointerSpikeVisualization(
         phase: String,
         sequence: Int,
@@ -4981,7 +5751,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         virtualPointerPoint = clamped
         mouseReportCount += 1
         interruptWritesInFlight += 1
-        let shouldLog = mouseReportCount <= 10 || mouseReportCount % 100 == 0 || easyPointerSpikeEnabled
+        let shouldLog = mouseReportCount <= 10
+            || mouseReportCount % 100 == 0
+            || (easyPointerSpikeEnabled && !easyLiveMouseEnabled)
         if shouldLog {
             let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
             appendLog(
@@ -5450,7 +6222,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         let reports = mouseReportCount - mouseReportsAtWindowStart
         let completions = mouseWriteCompletionCount - mouseWriteCompletionsAtWindowStart
         appendLog(
-            "[MousePerf] reason=\(reason) windowMs=\(Int(elapsed * 1000)) events=\(events) reports=\(reports) completions=\(completions) inFlight=\(interruptWritesInFlight) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) dragButtonDown=\(isSwipeButtonDownOnPhone)"
+            "[MousePerf] reason=\(reason) windowMs=\(Int(elapsed * 1000)) events=\(events) reports=\(reports) completions=\(completions) inFlight=\(interruptWritesInFlight) liveMouse=\(easyLiveMouseEnabled) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) dragButtonDown=\(isSwipeButtonDownOnPhone)"
         )
 
         mouseStatsWindowStartedAt = now
@@ -5529,6 +6301,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         let result = channel.writeAsync(&report, length: UInt16(report.count), refcon: nil)
         appendLog("[KeyboardReport] \(source) writeAsync result=\(result) modifiers=0x\(String(format: "%02X", modifiers)) keys=\(Self.hidKeyListDescription(reportKeys))")
+        let phase = reportKeys.isEmpty && modifiers == 0 ? "keyRelease" : "keyPress"
+        postAutomationInputObserved(
+            kind: "keyboardReport",
+            phase: phase,
+            source: source,
+            phonePoint: virtualPointerPoint,
+            details: [
+                "modifiers": String(format: "0x%02X", modifiers),
+                "keys": Self.hidKeyListDescription(reportKeys),
+                "writeResult": String(result),
+                "bypassInputGate": String(bypassInputGate),
+            ]
+        )
         return result == kIOReturnSuccess
     }
 
