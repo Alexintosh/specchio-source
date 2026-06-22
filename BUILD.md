@@ -1,13 +1,13 @@
-# Build Specchio 2026060701
+# Build Specchio 2026060702
 
-This tag contains the source corresponding to Specchio build `2026060701`.
+This tag contains the source corresponding to Specchio build `2026060702`.
 
 ## Build Metadata
 
 - Specchio app commit:
-  `a6b4f249fb0584e00d33186e3b7a1b0172bb5a4e`
+  `d2a8e5296b0e0e0e64d013df951b813ddb022c3a`
 - Original app commit date:
-  `2026-06-07 18:15:39 +0100`
+  `2026-06-08 16:42:52 +0100`
 - WebDriverAgent submodule commit:
   `e363ccc0b6eb7de57b04515cedcf2587b0f494fc`
 - Bundled AirPlay FairPlay provider architecture:

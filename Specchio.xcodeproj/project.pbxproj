@@ -874,7 +874,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060701;
+				CURRENT_PROJECT_VERSION = 2026060702;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -882,7 +882,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060701;
+				MARKETING_VERSION = 2026060702;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -897,7 +897,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026060701;
+				CURRENT_PROJECT_VERSION = 2026060702;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -906,7 +906,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026060701;
+				MARKETING_VERSION = 2026060702;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
