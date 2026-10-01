@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CD0000000000000000000081 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0000000000000000000082; };
+		CD0000000000000000000091 /* coredevice in Resources */ = {isa = PBXBuildFile; fileRef = CD0000000000000000000092; };
+		CD0000000000000000000011 /* CoreDeviceStreamManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0000000000000000000012; };
+		CD0000000000000000000001 /* CoreDeviceNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0000000000000000000002; };
 		0187372A5BF5F3C2AF7B3509 /* SpecchioApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197F749F63673F6E86F8B26B /* SpecchioApp.swift */; };
 		01D6BB76CA731AFDA8F4C765 /* USBVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F8FDA5E7448C5B90B6F775 /* USBVideoView.swift */; };
 		0C1A455AE328ECE857A22D2A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C4F9E0E8EEF4C89FB82A98E /* SettingsView.swift */; };
@@ -146,6 +150,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CD0000000000000000000082 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Specchio/App/KeychainStore.swift; sourceTree = SOURCE_ROOT; };
+		CD0000000000000000000092 /* coredevice */ = {isa = PBXFileReference; lastKnownFileType = folder; path = scripts/coredevice; sourceTree = SOURCE_ROOT; };
+		CD0000000000000000000012 /* CoreDeviceStreamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDeviceStreamManager.swift; sourceTree = "<group>"; };
+		CD0000000000000000000002 /* CoreDeviceNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreDeviceNative.swift; sourceTree = "<group>"; };
 		0086062E397379233B5F7458 /* WDATypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WDATypes.swift; sourceTree = "<group>"; };
 		05BA3DB09DA832EE1D74E26D /* AccessibilityTreeParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTreeParser.swift; sourceTree = "<group>"; };
 		0D92821B21504677DE8C9160 /* KeyboardMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardMapper.swift; sourceTree = "<group>"; };
@@ -312,6 +320,8 @@
 				A1B2C3D4E5F607182930A002 /* H264StreamManager.swift */,
 				IOSMGR0000000000000002 /* IOSScreenCaptureManager.swift */,
 				D231CB81D8ECC4931632B371 /* MJPEGStreamManager.swift */,
+				CD0000000000000000000002 /* CoreDeviceNative.swift */,
+				CD0000000000000000000012 /* CoreDeviceStreamManager.swift */,
 				RKH264DEC000000000002 /* ReplayKitH264VideoDecoder.swift */,
 				RKAUDSTR00000000002 /* ReplayKitAudioStreamManager.swift */,
 				0E0FF4AD9FFD4849A1E7718C /* ReplayKitScreenStreamManager.swift */,
@@ -593,6 +603,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD0000000000000000000091 /* coredevice in Resources */,
 				PAYWALLASSETBUILD001 /* Assets.xcassets in Resources */,
 				ITUTVIDBF000000000001 /* InteractiveTutorialVideos in Resources */,
 				1C450B1C2D3E4F5061728300 /* AppIcon.icns in Resources */,
@@ -713,6 +724,9 @@
 				FV1A2B3C4D5E6F7081920003 /* ForceUpdateView.swift in Sources */,
 				0E6DEE85B7AAAC7D6806CB12 /* FrameRateController.swift in Sources */,
 				A1B2C3D4E5F607182930A001 /* H264StreamManager.swift in Sources */,
+				CD0000000000000000000001 /* CoreDeviceNative.swift in Sources */,
+				CD0000000000000000000081 /* KeychainStore.swift in Sources */,
+				CD0000000000000000000011 /* CoreDeviceStreamManager.swift in Sources */,
 				RKH264DEC000000000001 /* ReplayKitH264VideoDecoder.swift in Sources */,
 				RKAUDSTR00000000001 /* ReplayKitAudioStreamManager.swift in Sources */,
 				526C5E7AAE1F421CABD289F2 /* EasyModeView.swift in Sources */,
@@ -949,7 +963,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026061201;
+				CURRENT_PROJECT_VERSION = 2026100101;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = SupportingFiles/Info.plist;
@@ -957,7 +971,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026061201;
+				MARKETING_VERSION = 2026100101;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
@@ -972,7 +986,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2026061201;
+				CURRENT_PROJECT_VERSION = 2026100101;
 				DEVELOPMENT_TEAM = 5297SX54T2;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -981,7 +995,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2026061201;
+				MARKETING_VERSION = 2026100101;
 				PRODUCT_BUNDLE_IDENTIFIER = com.alexintosh.Specchio;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;

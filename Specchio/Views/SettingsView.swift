@@ -4,6 +4,7 @@ import Sparkle
 private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
     case general
     case connection
+    case devices
     case keyboardMouse
     case videoMirroring
     case toolbar
@@ -17,6 +18,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .general:
             return "General"
+        case .devices:
+            return "Devices"
         case .connection:
             return "Connection"
         case .keyboardMouse:
@@ -38,6 +41,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .general:
             return "Window behavior and app-wide preferences"
+        case .devices:
+            return "Manage iPhone Wi-Fi pairings"
         case .connection:
             return "Reconnect, clipboard sync, and device unlock"
         case .keyboardMouse:
@@ -59,6 +64,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .general:
             return "gearshape"
+        case .devices:
+            return "iphone"
         case .connection:
             return "antenna.radiowaves.left.and.right"
         case .keyboardMouse:
@@ -80,6 +87,8 @@ private enum SettingsPanel: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .general:
             return "general"
+        case .devices:
+            return "devices"
         case .connection:
             return "connection"
         case .keyboardMouse:
@@ -114,10 +123,13 @@ private enum SettingsViewMetrics {
     static let headerIconSize: CGFloat = 46
     static let headerIconCornerRadius: CGFloat = 12
     static let activeIndicatorSize: CGFloat = 8
+    static let percentTextFieldWidth: CGFloat = 72
 }
 
 struct SettingsView: View {
     @StateObject private var settings = AppSettings()
+    @ObservedObject private var deviceStore = CoreDeviceDeviceStore.shared
+    @State private var deviceToRemove: CoreDeviceDeviceStore.Device?
     @ObservedObject private var licenseManager = LicenseManager.shared
     private let updater: SPUUpdater
 
@@ -125,8 +137,35 @@ struct SettingsView: View {
     @State private var licenseKeyInput = ""
     @State private var showPremiumSheet = false
     @State private var passcodeInput = ""
-    @State private var passcodeSaved = PasscodeManager().hasSavedPasscode
+    @State private var passcodeSaved = false
     @State private var windowChromeTopInset: CGFloat = 0
+
+    private var easyUsesAbsoluteMouseReportBinding: Binding<Bool> {
+        Binding(
+            get: {
+                AppSettings.EasyPointerSpikeTransport.usesAbsoluteMouseReport(settings.easyPointerSpikeTransportVariant)
+            },
+            set: { usesAbsoluteMouseReport in
+                settings.easyPointerSpikeTransportVariant = AppSettings.EasyPointerSpikeTransport.value(
+                    usesAbsoluteMouseReport: usesAbsoluteMouseReport
+                )
+            }
+        )
+    }
+
+    private var easyToolbarDragYPercentBinding: Binding<Double> {
+        Binding(
+            get: {
+                AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(settings.easyToolbarDragYCoordinateFraction) * 100
+            },
+            set: { requestedPercent in
+                let requestedFraction = requestedPercent / 100
+                let sanitizedFraction = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(requestedFraction)
+                SpecchioLogger.easyMode.info("[Settings] Easy toolbar drag Y numeric input requestedPercent=\(requestedPercent) requestedFraction=\(requestedFraction) appliedFraction=\(sanitizedFraction) appliedPercent=\(sanitizedFraction * 100)")
+                settings.easyToolbarDragYCoordinateFraction = sanitizedFraction
+            }
+        )
+    }
 
     init(updater: SPUUpdater) {
         self.updater = updater
@@ -183,6 +222,7 @@ struct SettingsView: View {
             easyInputSettingsObserver
             easyToolbarSettingsObserver
             easyVideoSettingsObserver
+            easyExperimentsSettingsObserver
         }
     }
 
@@ -213,6 +253,15 @@ struct SettingsView: View {
         .onChange(of: settings.easyHideLocalCursor) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy hide local cursor changed enabled=\(newValue)")
         }
+        .onChange(of: settings.easyMouseDragActivationThresholdFraction) { _, newValue in
+            let sanitizedValue = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy mouse drag threshold sanitized requested=\(newValue) applied=\(sanitizedValue)")
+                settings.easyMouseDragActivationThresholdFraction = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy mouse drag threshold changed fraction=\(sanitizedValue) percent=\(sanitizedValue * 100)")
+        }
         .onChange(of: settings.easyPointerSpikeEnabled) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy pointer spike changed enabled=\(newValue)")
         }
@@ -220,7 +269,13 @@ struct SettingsView: View {
             SpecchioLogger.easyMode.info("[Settings] Easy pointer spike overlay changed enabled=\(newValue)")
         }
         .onChange(of: settings.easyPointerSpikeTransportVariant) { _, newValue in
-            SpecchioLogger.easyMode.info("[Settings] Easy pointer spike transport changed variant=\(newValue)")
+            let sanitizedValue = AppSettings.EasyPointerSpikeTransport.sanitized(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy mouse report transport sanitized requested=\(newValue, privacy: .public) applied=\(sanitizedValue, privacy: .public)")
+                settings.easyPointerSpikeTransportVariant = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy mouse report transport changed variant=\(sanitizedValue, privacy: .public) reportID=\(AppSettings.EasyPointerSpikeTransport.reportIDLabel(for: sanitizedValue), privacy: .public)")
         }
         .onChange(of: settings.easyTrackpadSwipeToDragEnabled) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy trackpad swipe to drag experiment changed enabled=\(newValue)")
@@ -283,6 +338,15 @@ struct SettingsView: View {
         .onChange(of: settings.easyFloatingToolbarAllowsDragging) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy floating toolbar dragging changed enabled=\(newValue)")
         }
+        .onChange(of: settings.easyToolbarDragYCoordinateFraction) { _, newValue in
+            let sanitizedValue = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(newValue)
+            if sanitizedValue != newValue {
+                SpecchioLogger.easyMode.info("[Settings] Easy toolbar drag Y sanitized requested=\(newValue) applied=\(sanitizedValue)")
+                settings.easyToolbarDragYCoordinateFraction = sanitizedValue
+                return
+            }
+            SpecchioLogger.easyMode.info("[Settings] Easy toolbar drag Y changed fraction=\(sanitizedValue) percent=\(sanitizedValue * 100)")
+        }
         .onChange(of: settings.easyShowFPSCounter) { _, newValue in
             SpecchioLogger.easyMode.info("[Settings] Easy status bar FPS counter changed enabled=\(newValue)")
         }
@@ -320,18 +384,30 @@ struct SettingsView: View {
         }
     }
 
+    private var easyExperimentsSettingsObserver: some View {
+        Color.clear
+        .onChange(of: settings.easyAutomationToolbarEnabled) { _, newValue in
+            SpecchioLogger.automation.info("[SettingsExperiments] Easy automations changed enabled=\(newValue)")
+        }
+    }
+
     private func handleSettingsAppear() {
+        passcodeSaved = PasscodeManager().hasSavedPasscode
         SpecchioLogger.ui.info("[Settings] appeared layout=fixed-sidebar selectedPanel=\(self.selectedPanel.logName, privacy: .public)")
         SpecchioLogger.ui.info("[Settings] alwaysOnTop=\(self.settings.alwaysOnTop)")
         SpecchioLogger.ui.info("[Settings] bluetoothAutoConnect=\(self.settings.bluetoothAutoConnect)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarAlwaysVisible=\(self.settings.easyToolbarAlwaysVisible)")
         SpecchioLogger.easyMode.info("[Settings] easyAirPlayConnectionTutorialHidden=\(self.settings.easyAirPlayConnectionTutorialHidden)")
         sanitizeAirPlayQualityPreference(source: "settings appeared")
-        SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyLiveMouse=\(self.settings.easyLiveMouse) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant)")
+        settings.easyMouseDragActivationThresholdFraction = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(settings.easyMouseDragActivationThresholdFraction)
+        settings.easyToolbarDragYCoordinateFraction = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(settings.easyToolbarDragYCoordinateFraction)
+        settings.easyPointerSpikeTransportVariant = AppSettings.EasyPointerSpikeTransport.sanitized(settings.easyPointerSpikeTransportVariant)
+        SpecchioLogger.easyMode.info("[Settings] easyMouseClutchMode=\(self.settings.easyMouseClutchMode) easyLiveMouse=\(self.settings.easyLiveMouse) easyHideLocalCursor=\(self.settings.easyHideLocalCursor) easyMouseDragThresholdFraction=\(self.settings.easyMouseDragActivationThresholdFraction) easyPointerSpikeEnabled=\(self.settings.easyPointerSpikeEnabled) easyPointerSpikeOverlayEnabled=\(self.settings.easyPointerSpikeOverlayEnabled) easyPointerSpikeTransport=\(self.settings.easyPointerSpikeTransportVariant, privacy: .public) reportID=\(AppSettings.EasyPointerSpikeTransport.reportIDLabel(for: self.settings.easyPointerSpikeTransportVariant), privacy: .public)")
         SpecchioLogger.easyMode.info("[Settings] easyTrackpadSwipeToDragEnabled=\(self.settings.easyTrackpadSwipeToDragEnabled) mode=\(self.settings.easyTrackpadSwipeToDragMode, privacy: .public)")
+        SpecchioLogger.automation.info("[Settings] easyAutomationToolbarEnabled=\(self.settings.easyAutomationToolbarEnabled)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarCommandOrder legacy=\(self.settings.easyToolbarCommandOrder, privacy: .public) visible=\(self.settings.easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(self.settings.easyToolbarOverflowCommandOrder, privacy: .public)")
         SpecchioLogger.easyMode.info("[Settings] easyToolbarStyle=\(self.settings.easyToolbarStyle, privacy: .public)")
-        SpecchioLogger.easyMode.info("[Settings] easyFloatingToolbarAnchor=\(self.settings.easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(self.settings.easyFloatingToolbarAllowsDragging)")
+        SpecchioLogger.easyMode.info("[Settings] easyFloatingToolbarAnchor=\(self.settings.easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(self.settings.easyFloatingToolbarAllowsDragging) dragYFraction=\(self.settings.easyToolbarDragYCoordinateFraction) dragYPercent=\(self.settings.easyToolbarDragYCoordinateFraction * 100)")
         SpecchioLogger.easyMode.info("[Settings] easyShowFPSCounter=\(self.settings.easyShowFPSCounter)")
         SpecchioLogger.easyMode.info("[Settings] easyReplayKitH264TargetFPS=\(self.settings.easyReplayKitH264TargetFPS)")
         let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: self.settings.easyAirPlayQuality)
@@ -352,6 +428,9 @@ struct SettingsView: View {
             .onAppear {
                 SpecchioLogger.ui.info("[SettingsDetail] content branch=general alwaysOnTop=\(settings.alwaysOnTop) easyToolbarAlwaysVisible=\(settings.easyToolbarAlwaysVisible) airPlayTutorialHidden=\(settings.easyAirPlayConnectionTutorialHidden)")
             }
+
+        case .devices:
+            devicesSection
 
         case .connection:
             Group {
@@ -403,7 +482,7 @@ struct SettingsView: View {
                 experimentsSection
             }
             .onAppear {
-                SpecchioLogger.ui.info("[SettingsDetail] content branch=experiments trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public)")
+                SpecchioLogger.ui.info("[SettingsDetail] content branch=experiments trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public) automations=\(settings.easyAutomationToolbarEnabled)")
             }
 
         case .developers:
@@ -465,11 +544,6 @@ struct SettingsView: View {
 
     private var easyInputSection: some View {
         Section("Bluetooth Input") {
-            Toggle("Right-Button Clutch Mode", isOn: $settings.easyMouseClutchMode)
-            Text("Controls the right-button movement clutch. Live Mouse overrides it for real-time movement while the mirror window is focused.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
             Toggle("Live Mouse", isOn: $settings.easyLiveMouse)
             Text("When enabled, Easy forwards pointer movement in real time while the mirror window is focused.")
                 .font(.caption)
@@ -477,6 +551,26 @@ struct SettingsView: View {
 
             Toggle("Hide Mac Cursor Over Video", isOn: $settings.easyHideLocalCursor)
             Text("Hide the local macOS pointer while hovering the Easy mirror surface.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            Toggle("Absolute Mouse Report (0x0B)", isOn: easyUsesAbsoluteMouseReportBinding)
+            Text("On sends absolute pointer reports with Report ID 0x0B. Off tests the primary relative mouse report path with Report ID 0x02. Forget and pair once after this descriptor change.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack {
+                Text("Mouse Drag Threshold: \(settings.easyMouseDragActivationThresholdFraction * 100, specifier: "%.1f")%")
+                Slider(value: Binding(
+                    get: {
+                        AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(settings.easyMouseDragActivationThresholdFraction)
+                    },
+                    set: {
+                        settings.easyMouseDragActivationThresholdFraction = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction($0)
+                    }
+                ), in: AppSettings.Ranges.easyMouseDragActivationThresholdFraction, step: AppSettings.Steps.easyMouseDragActivationThresholdFraction)
+            }
+            Text("Controls how far a left-button movement must travel before Specchio treats it as a drag instead of a tap. Set 0% for immediate drag.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -501,6 +595,26 @@ struct SettingsView: View {
                 }
                 Toggle("Drag Window from Toolbar", isOn: $settings.easyFloatingToolbarAllowsDragging)
             }
+
+            LabeledContent("Drag Button Y") {
+                HStack(spacing: 6) {
+                    TextField(
+                        "",
+                        value: easyToolbarDragYPercentBinding,
+                        format: .number.precision(.fractionLength(1))
+                    )
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: SettingsViewMetrics.percentTextFieldWidth)
+                    .accessibilityLabel("Drag Button Y Percent")
+                    Text("%")
+                        .foregroundColor(.secondary)
+                }
+            }
+            Text("0% is the top edge of the mirrored display; 100% is the bottom edge.")
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             EasyToolbarOrderSettingsView(
                 legacyStorageValue: Binding(
@@ -569,6 +683,10 @@ struct SettingsView: View {
 
     private var experimentsSection: some View {
         Section("Input Experiments") {
+            Toggle("Easy Automations", isOn: $settings.easyAutomationToolbarEnabled)
+            Text("Shows the floating automation toolbar for recording and replaying Easy actions.")
+                .font(.caption)
+                .foregroundColor(.secondary)
             Toggle("Trackpad Swipe Controls iPhone", isOn: $settings.easyTrackpadSwipeToDragEnabled)
             Text("When enabled, horizontal two-finger trackpad swipes over the Easy video surface are converted into iPhone mouse drags.")
                 .font(.caption)
@@ -588,7 +706,7 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
         }
         .onAppear {
-            SpecchioLogger.easyMode.info("[SettingsExperiments] section visible trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public)")
+            SpecchioLogger.easyMode.info("[SettingsExperiments] section visible trackpadSwipeToDrag=\(settings.easyTrackpadSwipeToDragEnabled) mode=\(settings.easyTrackpadSwipeToDragMode, privacy: .public) automations=\(settings.easyAutomationToolbarEnabled)")
         }
     }
 
@@ -608,12 +726,9 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            Picker("Pointer Spike Transport", selection: $settings.easyPointerSpikeTransportVariant) {
-                Text("Absolute Mouse").tag(AppSettings.EasyPointerSpikeTransport.absoluteMouse)
-                Text("Relative Closed Loop").tag(AppSettings.EasyPointerSpikeTransport.relativeClosedLoop)
-            }
+            Toggle("Absolute Mouse Report (0x0B)", isOn: easyUsesAbsoluteMouseReportBinding)
             .disabled(!settings.easyPointerSpikeEnabled)
-            Text("Absolute Mouse sends Report ID 11 with absolute X/Y coordinates. After changing descriptor-capable builds, forget and re-pair the Bluetooth device so iOS reads the updated HID descriptor.")
+            Text("On sends Report ID 0x0B with absolute X/Y coordinates. Off sends movement through the primary relative mouse Report ID 0x02 path.")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -710,6 +825,62 @@ struct SettingsView: View {
         }
     }
 
+    private var devicesSection: some View {
+        Section("Paired iPhones · CoreDevice Wi-Fi") {
+            Text("Remove a saved pairing to test connecting an iPhone again. This removes the local CoreDevice Wi-Fi record; USB trust and Bluetooth pairings are unchanged.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if deviceStore.devices.isEmpty && !deviceStore.isBusy {
+                Text("No saved iPhone pairings.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(deviceStore.devices) { device in
+                HStack {
+                    VStack(alignment: .leading) {
+                        Label("Paired iPhone", systemImage: "iphone")
+                        Text(device.id)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    Spacer()
+                    Button("Remove Pairing", role: .destructive) {
+                        SpecchioLogger.easyMode.info("[CoreDevice Devices] removal confirmation requested")
+                        deviceToRemove = device
+                    }
+                    .disabled(deviceStore.isBusy || deviceStore.hasActiveSession)
+                }
+            }
+            if deviceStore.hasActiveSession {
+                Text("Disconnect the iPhone or cancel the connection before removing a pairing.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            if deviceStore.isBusy { ProgressView("Updating devices…") }
+            if let message = deviceStore.message {
+                Text(message).font(.callout)
+            }
+            Button("Refresh Devices") { Task { await deviceStore.refresh() } }
+                .disabled(deviceStore.isBusy)
+        }
+        .task {
+            SpecchioLogger.easyMode.info("[CoreDevice Devices] settings appeared")
+            await deviceStore.refresh()
+        }
+        .alert("Remove Wi-Fi pairing?", isPresented: Binding(
+            get: { deviceToRemove != nil },
+            set: { if !$0 { deviceToRemove = nil } }
+        ), presenting: deviceToRemove) { device in
+            Button("Remove Pairing", role: .destructive) {
+                Task { await deviceStore.remove(device) }
+                deviceToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { deviceToRemove = nil }
+        } message: { device in
+            Text("Remove the saved CoreDevice Wi-Fi pairing for \(device.id)? To connect again, attach this iPhone by USB and unlock it.")
+        }
+    }
+
     private var connectionSection: some View {
         Section("Connection") {
             Toggle("Auto-Reconnect", isOn: $settings.autoReconnect)
@@ -726,15 +897,15 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 160)
                     Button("Save") {
-                        PasscodeManager().save(passcode: passcodeInput)
-                        passcodeInput = ""
-                        passcodeSaved = true
+                        if PasscodeManager().save(passcode: passcodeInput) {
+                            passcodeInput = ""
+                            passcodeSaved = true
+                        }
                     }
                     .disabled(passcodeInput.isEmpty)
                     if passcodeSaved {
                         Button("Clear") {
-                            PasscodeManager().delete()
-                            passcodeSaved = false
+                            if PasscodeManager().delete() { passcodeSaved = false }
                         }
                     }
                 }
@@ -836,6 +1007,9 @@ struct SettingsView: View {
                 }
 
             case .error(let message):
+                Button("Retry License Access") {
+                    Task { await licenseManager.validate(allowAuthenticationUI: true) }
+                }
                 HStack {
                     if licenseManager.isPremium {
                         Label("Offline Grace Period", systemImage: "clock.badge.checkmark")

@@ -32,6 +32,7 @@
 		<string>_specchio-replaykit-audio._tcp</string>
 		<string>_airplay._tcp</string>
 		<string>_raop._tcp</string>
+		<string>_remotepairing._tcp</string>
 	</array>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>

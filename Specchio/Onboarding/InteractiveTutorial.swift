@@ -397,6 +397,9 @@ private enum InteractiveTutorialOverlayMetrics {
     static let spotlightStrokeWidth: CGFloat = 3
     static let tutorialCardStrokeWidth = spotlightStrokeWidth
     static let tutorialCardStrokeAlpha: CGFloat = 0.46
+    static let tutorialCardEdgeInset: CGFloat = 16
+    static let messageCardPreferredWidth: CGFloat = 390
+    static let spotlightCardPreferredWidth: CGFloat = 340
 }
 
 final class InteractiveTutorialCoordinator: ObservableObject {
@@ -836,7 +839,7 @@ struct InteractiveTutorialOverlay: View {
     private func overlayContent(step: InteractiveTutorialStep, proxy: GeometryProxy) -> some View {
         switch step.kind {
         case .message(let primaryActionTitle):
-            messageOverlay(step: step, primaryActionTitle: primaryActionTitle)
+            messageOverlay(step: step, primaryActionTitle: primaryActionTitle, proxy: proxy)
         case .spotlight(let target):
             if let targetFrame = localFrame(for: target, proxy: proxy) {
                 spotlightOverlay(step: step, targetFrame: targetFrame, proxy: proxy)
@@ -848,12 +851,35 @@ struct InteractiveTutorialOverlay: View {
         }
     }
 
-    private func messageOverlay(step: InteractiveTutorialStep, primaryActionTitle: String) -> some View {
-        ZStack {
+    private func messageOverlay(
+        step: InteractiveTutorialStep,
+        primaryActionTitle: String,
+        proxy: GeometryProxy
+    ) -> some View {
+        let cardWidth = responsiveCardWidth(
+            preferredWidth: InteractiveTutorialOverlayMetrics.messageCardPreferredWidth,
+            in: proxy.size,
+            step: step,
+            context: "message"
+        )
+
+        return ZStack {
             Color.black.opacity(0.72)
                 .ignoresSafeArea()
             tutorialCard(step: step, primaryActionTitle: primaryActionTitle)
-                .frame(width: 390)
+                .frame(width: cardWidth)
+                .onAppear {
+                    SpecchioLogger.easyMode.info("[InteractiveTutorialOverlay] responsive message card appeared step=\(step.id.rawValue, privacy: .public) width=\(cardWidth) containerWidth=\(proxy.size.width) containerHeight=\(proxy.size.height)")
+                }
+                .onChange(of: proxy.size) { _, newSize in
+                    let newWidth = responsiveCardWidth(
+                        preferredWidth: InteractiveTutorialOverlayMetrics.messageCardPreferredWidth,
+                        in: newSize,
+                        step: step,
+                        context: "message-resize"
+                    )
+                    SpecchioLogger.easyMode.info("[InteractiveTutorialOverlay] responsive message card resized step=\(step.id.rawValue, privacy: .public) width=\(newWidth) containerWidth=\(newSize.width) containerHeight=\(newSize.height)")
+                }
         }
     }
 
@@ -884,7 +910,13 @@ struct InteractiveTutorialOverlay: View {
         proxy: GeometryProxy
     ) -> some View {
         let hole = paddedTargetFrame(targetFrame, in: proxy.size)
-        let panelPosition = cardPosition(for: hole, in: proxy.size)
+        let cardWidth = responsiveCardWidth(
+            preferredWidth: InteractiveTutorialOverlayMetrics.spotlightCardPreferredWidth,
+            in: proxy.size,
+            step: step,
+            context: "spotlight"
+        )
+        let panelPosition = cardPosition(for: hole, cardWidth: cardWidth, in: proxy.size)
         let arrowPosition = arrowPosition(for: hole, in: proxy.size)
         return ZStack(alignment: .topLeading) {
             spotlightDimmingVisual(around: hole, size: proxy.size)
@@ -906,12 +938,23 @@ struct InteractiveTutorialOverlay: View {
                 .allowsHitTesting(false)
 
             tutorialCard(step: step, primaryActionTitle: nil)
-                .frame(width: 340)
+                .frame(width: cardWidth)
                 .position(panelPosition)
                 .allowsHitTesting(false)
         }
         .onAppear {
-            SpecchioLogger.easyMode.info("[InteractiveTutorialOverlay] spotlight installed step=\(step.id.rawValue, privacy: .public) targetFrame=\(InteractiveTutorialCoordinator.rectDescription(targetFrame), privacy: .public) hole=\(InteractiveTutorialCoordinator.rectDescription(hole), privacy: .public) proxyWidth=\(proxy.size.width) proxyHeight=\(proxy.size.height)")
+            SpecchioLogger.easyMode.info("[InteractiveTutorialOverlay] spotlight installed step=\(step.id.rawValue, privacy: .public) targetFrame=\(InteractiveTutorialCoordinator.rectDescription(targetFrame), privacy: .public) hole=\(InteractiveTutorialCoordinator.rectDescription(hole), privacy: .public) cardWidth=\(cardWidth) cardX=\(panelPosition.x) cardY=\(panelPosition.y) proxyWidth=\(proxy.size.width) proxyHeight=\(proxy.size.height)")
+        }
+        .onChange(of: proxy.size) { _, newSize in
+            let newCardWidth = responsiveCardWidth(
+                preferredWidth: InteractiveTutorialOverlayMetrics.spotlightCardPreferredWidth,
+                in: newSize,
+                step: step,
+                context: "spotlight-resize"
+            )
+            let newHole = paddedTargetFrame(targetFrame, in: newSize)
+            let newPosition = cardPosition(for: newHole, cardWidth: newCardWidth, in: newSize)
+            SpecchioLogger.easyMode.info("[InteractiveTutorialOverlay] spotlight resized step=\(step.id.rawValue, privacy: .public) hole=\(InteractiveTutorialCoordinator.rectDescription(newHole), privacy: .public) cardWidth=\(newCardWidth) cardX=\(newPosition.x) cardY=\(newPosition.y) proxyWidth=\(newSize.width) proxyHeight=\(newSize.height)")
         }
     }
 
@@ -1083,12 +1126,54 @@ struct InteractiveTutorialOverlay: View {
         )
     }
 
-    private func cardPosition(for hole: CGRect, in size: CGSize) -> CGPoint {
-        let x = min(max(hole.midX, 190), max(190, size.width - 190))
-        if hole.maxY + 190 < size.height {
-            return CGPoint(x: x, y: hole.maxY + 110)
+    private func responsiveCardWidth(
+        preferredWidth: CGFloat,
+        in size: CGSize,
+        step: InteractiveTutorialStep,
+        context: String
+    ) -> CGFloat {
+        let edgeInset = InteractiveTutorialOverlayMetrics.tutorialCardEdgeInset
+        let availableWidth = max(0, size.width - edgeInset * 2)
+        let resolvedWidth = min(preferredWidth, availableWidth)
+        let branch = resolvedWidth < preferredWidth ? "clamped-to-container" : "preferred-width"
+        SpecchioLogger.easyMode.debug("[InteractiveTutorialOverlay] responsive card width resolved context=\(context, privacy: .public) branch=\(branch, privacy: .public) step=\(step.id.rawValue, privacy: .public) preferredWidth=\(preferredWidth) availableWidth=\(availableWidth) resolvedWidth=\(resolvedWidth) containerWidth=\(size.width)")
+        return resolvedWidth
+    }
+
+    private func cardPosition(for hole: CGRect, cardWidth: CGFloat, in size: CGSize) -> CGPoint {
+        let edgeInset = InteractiveTutorialOverlayMetrics.tutorialCardEdgeInset
+        let halfCardWidth = cardWidth / 2
+        let minimumX = edgeInset + halfCardWidth
+        let maximumX = max(minimumX, size.width - edgeInset - halfCardWidth)
+        let unclampedX = hole.midX
+        let x: CGFloat
+        let horizontalBranch: String
+        if maximumX == minimumX {
+            x = size.width / 2
+            horizontalBranch = "centered-container-too-narrow"
+        } else if unclampedX < minimumX {
+            x = minimumX
+            horizontalBranch = "clamped-leading"
+        } else if unclampedX > maximumX {
+            x = maximumX
+            horizontalBranch = "clamped-trailing"
+        } else {
+            x = unclampedX
+            horizontalBranch = "aligned-to-target"
         }
-        return CGPoint(x: x, y: max(110, hole.minY - 110))
+
+        let verticalBranch: String
+        let y: CGFloat
+        if hole.maxY + 190 < size.height {
+            y = hole.maxY + 110
+            verticalBranch = "below-target"
+        } else {
+            y = max(110, hole.minY - 110)
+            verticalBranch = "above-target"
+        }
+
+        SpecchioLogger.easyMode.debug("[InteractiveTutorialOverlay] responsive card position resolved horizontalBranch=\(horizontalBranch, privacy: .public) verticalBranch=\(verticalBranch, privacy: .public) hole=\(InteractiveTutorialCoordinator.rectDescription(hole), privacy: .public) cardWidth=\(cardWidth) x=\(x) y=\(y) containerWidth=\(size.width) containerHeight=\(size.height)")
+        return CGPoint(x: x, y: y)
     }
 
     private func arrowPosition(for hole: CGRect, in size: CGSize) -> (x: CGFloat, y: CGFloat, pointsDown: Bool) {

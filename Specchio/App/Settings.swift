@@ -22,11 +22,13 @@ class AppSettings: ObservableObject {
         static let easyMouseClutchMode = "easyMouseClutchMode"
         static let easyLiveMouse = "easyLiveMouse"
         static let easyHideLocalCursor = "easyHideLocalCursor"
+        static let easyMouseDragActivationThresholdFraction = "easyMouseDragActivationThresholdFraction"
         static let easyPointerSpikeEnabled = "easyPointerSpikeEnabled"
         static let easyPointerSpikeOverlayEnabled = "easyPointerSpikeOverlayEnabled"
         static let easyPointerSpikeTransportVariant = "easyPointerSpikeTransportVariant"
         static let easyTrackpadSwipeToDragEnabled = "easyTrackpadSwipeToDragEnabled"
         static let easyTrackpadSwipeToDragMode = "easyTrackpadSwipeToDragMode"
+        static let easyAutomationToolbarEnabled = "easyAutomationToolbarEnabled"
         static let easyPointerDefaultsMigrated = "easyPointerDefaultsMigrated"
         static let easyToolbarCommandOrder = "easyToolbarCommandOrder"
         static let easyToolbarVisibleCommandOrder = "easyToolbarVisibleCommandOrder"
@@ -35,10 +37,12 @@ class AppSettings: ObservableObject {
         static let easyToolbarAlwaysVisible = "easyToolbarAlwaysVisible"
         static let easyFloatingToolbarAnchor = "easyFloatingToolbarAnchor"
         static let easyFloatingToolbarAllowsDragging = "easyFloatingToolbarAllowsDragging"
+        static let easyToolbarDragYCoordinateFraction = "easyToolbarDragYCoordinateFraction"
         static let easyShowFPSCounter = "easyShowFPSCounter"
         static let easyReplayKitH264TargetFPS = "easyReplayKitH264TargetFPS"
         static let easyAirPlayQuality = "easyAirPlayQuality"
         static let easyUSBTargetFPS = "easyUSBTargetFPS"
+        static let easyIPhoneVersion = "easyIPhoneVersion"
         static let easyAirPlayConnectionTutorialHidden = "easyAirPlayConnectionTutorialHidden"
         static let showDeveloperOptions = "showDeveloperOptions"
     }
@@ -52,10 +56,13 @@ class AppSettings: ObservableObject {
         static let easyToolbarAlwaysVisible = true
         static let easyFloatingToolbarAnchor = EasyFloatingToolbarAnchor.above
         static let easyFloatingToolbarAllowsDragging = true
+        static let easyToolbarDragYCoordinateFraction: Double = 0.85
         static let easyAirPlayConnectionTutorialHidden = false
         static let easyLiveMouse = false
+        static let easyMouseDragActivationThresholdFraction: Double = 0.01
         static let easyTrackpadSwipeToDragEnabled = false
         static let easyTrackpadSwipeToDragMode = EasyTrackpadSwipeToDragMode.live
+        static let easyAutomationToolbarEnabled = false
     }
 
     static func bluetoothAutoConnectEnabled(defaults: UserDefaults = .standard) -> Bool {
@@ -72,6 +79,13 @@ class AppSettings: ObservableObject {
     enum Ranges {
         static let easyReplayKitH264TargetFPS: ClosedRange<Double> = 1...60
         static let easyUSBTargetFPS: ClosedRange<Double> = 0...60
+        static let easyMouseDragActivationThresholdFraction: ClosedRange<Double> = 0...0.05
+        static let easyToolbarDragYCoordinateFraction: ClosedRange<Double> = 0...1
+    }
+
+    enum Steps {
+        static let easyMouseDragActivationThresholdFraction: Double = 0.001
+        static let easyToolbarDragYCoordinateFraction: Double = 0.001
     }
 
     static func sanitizedEasyReplayKitH264TargetFPS(_ value: Double) -> Double {
@@ -89,6 +103,22 @@ class AppSettings: ObservableObject {
         return min(
             max(roundedValue, Ranges.easyUSBTargetFPS.lowerBound),
             Ranges.easyUSBTargetFPS.upperBound
+        )
+    }
+
+    static func sanitizedEasyMouseDragActivationThresholdFraction(_ value: Double) -> Double {
+        guard value.isFinite else { return Defaults.easyMouseDragActivationThresholdFraction }
+        return min(
+            max(value, Ranges.easyMouseDragActivationThresholdFraction.lowerBound),
+            Ranges.easyMouseDragActivationThresholdFraction.upperBound
+        )
+    }
+
+    static func sanitizedEasyToolbarDragYCoordinateFraction(_ value: Double) -> Double {
+        guard value.isFinite else { return Defaults.easyToolbarDragYCoordinateFraction }
+        return min(
+            max(value, Ranges.easyToolbarDragYCoordinateFraction.lowerBound),
+            Ranges.easyToolbarDragYCoordinateFraction.upperBound
         )
     }
 
@@ -130,7 +160,32 @@ class AppSettings: ObservableObject {
     enum EasyPointerSpikeTransport {
         static let absoluteMouse = "ABS-MOUSE"
         static let relativeClosedLoop = "REL-CL"
+        static let allowedValues = [absoluteMouse, relativeClosedLoop]
         static let defaultValue = absoluteMouse
+
+        static func sanitized(_ value: String?) -> String {
+            guard let value else { return defaultValue }
+            switch value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
+            case absoluteMouse, "ABS", "ABSOLUTE":
+                return absoluteMouse
+            case relativeClosedLoop, "REL", "RELATIVE":
+                return relativeClosedLoop
+            default:
+                return defaultValue
+            }
+        }
+
+        static func usesAbsoluteMouseReport(_ value: String?) -> Bool {
+            sanitized(value) == absoluteMouse
+        }
+
+        static func value(usesAbsoluteMouseReport: Bool) -> String {
+            usesAbsoluteMouseReport ? absoluteMouse : relativeClosedLoop
+        }
+
+        static func reportIDLabel(for value: String?) -> String {
+            usesAbsoluteMouseReport(value) ? "0x0B" : "0x02"
+        }
     }
 
     enum EasyTrackpadSwipeToDragMode {
@@ -233,6 +288,8 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyLiveMouse) var easyLiveMouse: Bool = Defaults.easyLiveMouse
     /// Easy mode: hide the local macOS cursor while hovering the mirrored phone surface.
     @AppStorage(Keys.easyHideLocalCursor) var easyHideLocalCursor: Bool = false
+    /// Easy mode: distance gate before a left-button move is promoted from tap to drag.
+    @AppStorage(Keys.easyMouseDragActivationThresholdFraction) var easyMouseDragActivationThresholdFraction: Double = Defaults.easyMouseDragActivationThresholdFraction
     /// Easy mode: enable deterministic absolute pointer input.
     @AppStorage(Keys.easyPointerSpikeEnabled) var easyPointerSpikeEnabled: Bool = true
     /// Easy mode: show on-screen expected vs actual markers while the spike harness is active.
@@ -243,6 +300,8 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyTrackpadSwipeToDragEnabled) var easyTrackpadSwipeToDragEnabled: Bool = Defaults.easyTrackpadSwipeToDragEnabled
     /// Easy mode experiment: send trackpad swipes live or after the touchpad gesture ends.
     @AppStorage(Keys.easyTrackpadSwipeToDragMode) var easyTrackpadSwipeToDragMode: String = Defaults.easyTrackpadSwipeToDragMode
+    /// Easy mode experiment: show recording/replay automation controls.
+    @AppStorage(Keys.easyAutomationToolbarEnabled) var easyAutomationToolbarEnabled: Bool = Defaults.easyAutomationToolbarEnabled
     /// Easy mode: legacy ordered toolbar command identifiers. Used to migrate older toolbar settings.
     @AppStorage(Keys.easyToolbarCommandOrder) var easyToolbarCommandOrder: String = EasyToolbarCommand.defaultOrderStorageValue
     /// Easy mode: ordered toolbar command identifiers that should stay visible, capped by EasyToolbarCommandLayout.
@@ -257,6 +316,8 @@ class AppSettings: ObservableObject {
     @AppStorage(Keys.easyFloatingToolbarAnchor) var easyFloatingToolbarAnchor: String = Defaults.easyFloatingToolbarAnchor
     /// Easy mode: allow users to drag the external floating toolbar panel away from its anchor.
     @AppStorage(Keys.easyFloatingToolbarAllowsDragging) var easyFloatingToolbarAllowsDragging: Bool = Defaults.easyFloatingToolbarAllowsDragging
+    /// Easy mode: display-normalized Y coordinate used by the toolbar's drag-left/right buttons.
+    @AppStorage(Keys.easyToolbarDragYCoordinateFraction) var easyToolbarDragYCoordinateFraction: Double = Defaults.easyToolbarDragYCoordinateFraction
     /// Easy mode: show the live FPS count in the bottom status bar.
     @AppStorage(Keys.easyShowFPSCounter) var easyShowFPSCounter: Bool = false
     /// Easy mode: ReplayKit H.264 frame gate target advertised to the broadcast extension.

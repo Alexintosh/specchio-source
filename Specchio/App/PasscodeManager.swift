@@ -1,55 +1,29 @@
 import Foundation
 import Security
-import os.log
-
-private let log = SpecchioLogger.unlock
 
 struct PasscodeManager {
     private static let service = "com.alexintosh.Specchio"
     private static let account = "devicePasscode"
+    var store = SpecchioKeychainStore.shared
 
-    func save(passcode: String) {
-        guard let data = passcode.data(using: .utf8) else { return }
-        delete()
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: Self.account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-        ]
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status == errSecSuccess {
-            log.info("Passcode saved to Keychain")
-        } else {
-            log.error("Keychain write failed: \(status)")
-        }
+    @discardableResult
+    func save(passcode: String) -> Bool {
+        store.write(service: Self.service, account: Self.account,
+                    data: Data(passcode.utf8), allowUI: true) == errSecSuccess
     }
 
-    func load() -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: Self.account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+    func load(allowAuthenticationUI: Bool = false) -> String? {
+        let result = store.read(service: Self.service, account: Self.account, allowUI: allowAuthenticationUI)
+        return result.data.flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    func delete() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.service,
-            kSecAttrAccount as String: Self.account,
-        ]
-        SecItemDelete(query as CFDictionary)
+    @discardableResult
+    func delete() -> Bool {
+        let status = store.delete(service: Self.service, account: Self.account, allowUI: true)
+        return status == errSecSuccess || status == errSecItemNotFound
     }
 
     var hasSavedPasscode: Bool {
-        load() != nil
+        store.contains(service: Self.service, account: Self.account)
     }
 }

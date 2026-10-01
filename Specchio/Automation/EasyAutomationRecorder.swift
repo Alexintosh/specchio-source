@@ -97,21 +97,30 @@ final class EasyAutomationRecorder: ObservableObject {
         }
 
         let forceFrame = input.requiresFrameKeypoint
+        let sequence = session.nextSequence
+        let timestamp = Date().timeIntervalSince1970
+        let elapsedMilliseconds = session.elapsedMilliseconds
         let frameReference = captureFrameIfNeeded(
             frame,
             in: session,
-            eventSequence: session.nextSequence,
+            eventSequence: sequence,
             reason: "\(input.kind)-\(input.phase)",
             force: forceFrame
         )
+        let motion = session.motionSample(
+            for: input,
+            timestamp: timestamp,
+            elapsedMilliseconds: elapsedMilliseconds
+        )
         let event = EasyAutomationRecordedEvent(
-            sequence: session.nextSequence,
-            timestamp: Date().timeIntervalSince1970,
-            elapsedMilliseconds: session.elapsedMilliseconds,
+            sequence: sequence,
+            timestamp: timestamp,
+            elapsedMilliseconds: elapsedMilliseconds,
             kind: input.kind,
             phase: input.phase,
             reason: input.source,
             input: input,
+            motion: motion,
             geometry: EasyAutomationGeometrySnapshot(status: status),
             frame: frameReference
         )
@@ -119,7 +128,9 @@ final class EasyAutomationRecorder: ObservableObject {
         eventCount = session.events.count
         frameCount = session.frameCount
         statusText = "Recording"
-        easyAutomationLog.info("[EasyAutomationRecorder] recorded input id=\(session.id, privacy: .public) sequence=\(event.sequence) kind=\(input.kind, privacy: .public) phase=\(input.phase, privacy: .public) frame=\(frameReference?.relativePath ?? "none", privacy: .public) events=\(session.events.count)")
+        let speedText = motion?.speedPointsPerSecond.map { String(format: "%.2f", $0) } ?? "nil"
+        let impulseText = motion?.impulseMagnitudePointsPerSecond.map { String(format: "%.2f", $0) } ?? "nil"
+        easyAutomationLog.info("[EasyAutomationRecorder] recorded input id=\(session.id, privacy: .public) sequence=\(event.sequence) kind=\(input.kind, privacy: .public) phase=\(input.phase, privacy: .public) speed=\(speedText, privacy: .public) impulse=\(impulseText, privacy: .public) frame=\(frameReference?.relativePath ?? "none", privacy: .public) events=\(session.events.count)")
     }
 
     private func appendLifecycleEvent(
@@ -146,6 +157,7 @@ final class EasyAutomationRecorder: ObservableObject {
             phase: phase,
             reason: reason,
             input: nil,
+            motion: nil,
             geometry: EasyAutomationGeometrySnapshot(status: status),
             frame: frameReference
         )
@@ -189,7 +201,7 @@ final class EasyAutomationRecorder: ObservableObject {
 }
 
 private enum EasyAutomationRecordingDefaults {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
     static let frameThrottleSeconds: TimeInterval = 0.2
     static let jpegQuality = 0.82
 }
@@ -220,6 +232,7 @@ private final class EasyAutomationRecordingSession {
     let initialGeometry: EasyAutomationGeometrySnapshot
     private(set) var events: [EasyAutomationRecordedEvent] = []
     private(set) var frameCount = 0
+    private var motionTracker = EasyAutomationMotionTracker()
 
     var nextSequence: Int {
         events.count + 1
@@ -241,6 +254,18 @@ private final class EasyAutomationRecordingSession {
 
     func append(_ event: EasyAutomationRecordedEvent) {
         events.append(event)
+    }
+
+    func motionSample(
+        for input: EasyAutomationRecordedInput,
+        timestamp: TimeInterval,
+        elapsedMilliseconds: Int
+    ) -> EasyAutomationRecordedMotion? {
+        motionTracker.sample(
+            for: input,
+            recorderTimestamp: timestamp,
+            elapsedMilliseconds: elapsedMilliseconds
+        )
     }
 
     func writeFrame(_ frame: CGImage, eventSequence: Int, timestamp: TimeInterval) throws -> EasyAutomationRecordedFrame {
@@ -324,6 +349,7 @@ private struct EasyAutomationRecordedEvent: Encodable {
     let phase: String
     let reason: String
     let input: EasyAutomationRecordedInput?
+    let motion: EasyAutomationRecordedMotion?
     let geometry: EasyAutomationGeometrySnapshot
     let frame: EasyAutomationRecordedFrame?
 }
@@ -334,7 +360,14 @@ private struct EasyAutomationRecordedInput: Encodable {
     let source: String
     let eventType: String?
     let eventNumber: Int?
+    let nativeEventTimestamp: TimeInterval?
+    let eventDelta: EasyAutomationPoint?
+    let eventButtonNumber: Int?
     let eventLocationInWindow: EasyAutomationPoint?
+    let scrollingDelta: EasyAutomationPoint?
+    let hasPreciseScrollingDeltas: Bool?
+    let scrollPhaseRaw: Int?
+    let momentumPhaseRaw: Int?
     let localPoint: EasyAutomationPoint?
     let normalizedPoint: EasyAutomationPoint?
     let phonePoint: EasyAutomationPoint?
@@ -369,7 +402,14 @@ private struct EasyAutomationRecordedInput: Encodable {
         self.source = source
         eventType = userInfo["eventType"] as? String
         eventNumber = Self.intValue(userInfo["eventNumber"])
+        nativeEventTimestamp = Self.doubleValue(userInfo["nativeEventTimestamp"])
+        eventDelta = Self.point(prefix: "eventDelta", userInfo: userInfo)
+        eventButtonNumber = Self.intValue(userInfo["eventButtonNumber"])
         eventLocationInWindow = Self.point(prefix: "eventLocationInWindow", userInfo: userInfo)
+        scrollingDelta = Self.point(prefix: "scrollingDelta", userInfo: userInfo)
+        hasPreciseScrollingDeltas = Self.boolValue(userInfo["hasPreciseScrollingDeltas"])
+        scrollPhaseRaw = Self.intValue(userInfo["scrollPhaseRaw"])
+        momentumPhaseRaw = Self.intValue(userInfo["momentumPhaseRaw"])
         localPoint = Self.point(prefix: "localPoint", userInfo: userInfo)
         normalizedPoint = Self.point(prefix: "normalizedPoint", userInfo: userInfo)
         phonePoint = Self.point(prefix: "phonePoint", userInfo: userInfo)
@@ -440,6 +480,219 @@ private struct EasyAutomationRecordedInput: Encodable {
             return nil
         }
     }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        switch value {
+        case let number as NSNumber:
+            return number.boolValue
+        case let value as Bool:
+            return value
+        case let value as String:
+            let lowercased = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["true", "yes", "1"].contains(lowercased) { return true }
+            if ["false", "no", "0"].contains(lowercased) { return false }
+            return nil
+        default:
+            return nil
+        }
+    }
+}
+
+private struct EasyAutomationRecordedMotion: Encodable {
+    let gestureID: Int
+    let sampleIndex: Int
+    let phase: String
+    let pointSpace: String?
+    let timestampKind: String
+    let timeDeltaMilliseconds: Double?
+    let point: EasyAutomationPoint?
+    let pointDelta: EasyAutomationPoint?
+    let distancePoints: Double?
+    let velocityPointsPerSecond: EasyAutomationPoint?
+    let speedPointsPerSecond: Double?
+    let accelerationPointsPerSecondSquared: EasyAutomationPoint?
+    let accelerationMagnitudePointsPerSecondSquared: Double?
+    let impulsePointsPerSecond: EasyAutomationPoint?
+    let impulseMagnitudePointsPerSecond: Double?
+    let cumulativeDistancePoints: Double
+    let cumulativeImpulseMagnitudePointsPerSecond: Double
+    let peakSpeedPointsPerSecond: Double
+    let peakAccelerationMagnitudePointsPerSecondSquared: Double
+    let eventDelta: EasyAutomationPoint?
+    let eventDeltaMagnitude: Double?
+    let eventDeltaVelocityUnitsPerSecond: EasyAutomationPoint?
+    let eventDeltaSpeedUnitsPerSecond: Double?
+    let scrollingDelta: EasyAutomationPoint?
+    let scrollingDeltaMagnitude: Double?
+}
+
+private struct EasyAutomationMotionTracker {
+    private struct MotionState {
+        let timestamp: TimeInterval
+        let timestampKind: String
+        let point: CGPoint?
+        let velocity: CGPoint?
+    }
+
+    private var nextGestureID = 1
+    private var currentGestureID: Int?
+    private var sampleIndex = 0
+    private var cumulativeDistancePoints = 0.0
+    private var cumulativeImpulseMagnitudePointsPerSecond = 0.0
+    private var peakSpeedPointsPerSecond = 0.0
+    private var peakAccelerationMagnitudePointsPerSecondSquared = 0.0
+    private var previousState: MotionState?
+
+    mutating func sample(
+        for input: EasyAutomationRecordedInput,
+        recorderTimestamp: TimeInterval,
+        elapsedMilliseconds: Int
+    ) -> EasyAutomationRecordedMotion? {
+        guard input.kind == "pointer" || input.kind == "scroll" else { return nil }
+
+        let startsGesture = input.kind == "pointer" && ["down", "dragStart"].contains(input.phase)
+        let endsGesture = input.kind == "pointer" && ["up", "dragEnd"].contains(input.phase)
+        if startsGesture || currentGestureID == nil {
+            beginGesture()
+        }
+
+        guard let gestureID = currentGestureID else { return nil }
+
+        let pointSelection = selectedPoint(for: input)
+        let point = pointSelection.point
+        let timestampKind = input.nativeEventTimestamp == nil ? "recorder" : "nativeEvent"
+        let timestamp = input.nativeEventTimestamp ?? recorderTimestamp
+        let eventDeltaPoint = input.eventDelta?.cgPoint
+        let scrollingDeltaPoint = input.scrollingDelta?.cgPoint
+
+        sampleIndex += 1
+
+        let previous = previousState
+        let timeDeltaSeconds: Double?
+        if let previous, previous.timestampKind == timestampKind {
+            let delta = timestamp - previous.timestamp
+            timeDeltaSeconds = delta.isFinite && delta > 0 ? delta : nil
+        } else {
+            timeDeltaSeconds = nil
+        }
+
+        let pointDelta = delta(from: previous?.point, to: point)
+        let distance = pointDelta.map(Self.magnitude)
+        let velocity = vector(pointDelta, dividedBy: timeDeltaSeconds)
+        let speed = velocity.map(Self.magnitude)
+        let velocityDelta = delta(from: previous?.velocity, to: velocity)
+        let acceleration = vector(velocityDelta, dividedBy: timeDeltaSeconds)
+        let accelerationMagnitude = acceleration.map(Self.magnitude)
+        let impulse = velocityDelta
+        let impulseMagnitude = impulse.map(Self.magnitude)
+        let eventDeltaVelocity = vector(eventDeltaPoint, dividedBy: timeDeltaSeconds)
+        let eventDeltaSpeed = eventDeltaVelocity.map(Self.magnitude)
+
+        if let distance {
+            cumulativeDistancePoints += distance
+        }
+        if let impulseMagnitude {
+            cumulativeImpulseMagnitudePointsPerSecond += impulseMagnitude
+        }
+        if let speed {
+            peakSpeedPointsPerSecond = max(peakSpeedPointsPerSecond, speed)
+        }
+        if let accelerationMagnitude {
+            peakAccelerationMagnitudePointsPerSecondSquared = max(
+                peakAccelerationMagnitudePointsPerSecondSquared,
+                accelerationMagnitude
+            )
+        }
+
+        let motion = EasyAutomationRecordedMotion(
+            gestureID: gestureID,
+            sampleIndex: sampleIndex,
+            phase: input.phase,
+            pointSpace: pointSelection.space,
+            timestampKind: timestampKind,
+            timeDeltaMilliseconds: timeDeltaSeconds.map { $0 * 1000 },
+            point: point.map(EasyAutomationPoint.init),
+            pointDelta: pointDelta.map(EasyAutomationPoint.init),
+            distancePoints: distance,
+            velocityPointsPerSecond: velocity.map(EasyAutomationPoint.init),
+            speedPointsPerSecond: speed,
+            accelerationPointsPerSecondSquared: acceleration.map(EasyAutomationPoint.init),
+            accelerationMagnitudePointsPerSecondSquared: accelerationMagnitude,
+            impulsePointsPerSecond: impulse.map(EasyAutomationPoint.init),
+            impulseMagnitudePointsPerSecond: impulseMagnitude,
+            cumulativeDistancePoints: cumulativeDistancePoints,
+            cumulativeImpulseMagnitudePointsPerSecond: cumulativeImpulseMagnitudePointsPerSecond,
+            peakSpeedPointsPerSecond: peakSpeedPointsPerSecond,
+            peakAccelerationMagnitudePointsPerSecondSquared: peakAccelerationMagnitudePointsPerSecondSquared,
+            eventDelta: eventDeltaPoint.map(EasyAutomationPoint.init),
+            eventDeltaMagnitude: eventDeltaPoint.map(Self.magnitude),
+            eventDeltaVelocityUnitsPerSecond: eventDeltaVelocity.map(EasyAutomationPoint.init),
+            eventDeltaSpeedUnitsPerSecond: eventDeltaSpeed,
+            scrollingDelta: scrollingDeltaPoint.map(EasyAutomationPoint.init),
+            scrollingDeltaMagnitude: scrollingDeltaPoint.map(Self.magnitude)
+        )
+
+        previousState = MotionState(
+            timestamp: timestamp,
+            timestampKind: timestampKind,
+            point: point,
+            velocity: velocity
+        )
+
+        if endsGesture {
+            endGesture()
+        }
+
+        return motion
+    }
+
+    private mutating func beginGesture() {
+        currentGestureID = nextGestureID
+        nextGestureID += 1
+        sampleIndex = 0
+        cumulativeDistancePoints = 0
+        cumulativeImpulseMagnitudePointsPerSecond = 0
+        peakSpeedPointsPerSecond = 0
+        peakAccelerationMagnitudePointsPerSecondSquared = 0
+        previousState = nil
+    }
+
+    private mutating func endGesture() {
+        currentGestureID = nil
+        sampleIndex = 0
+        previousState = nil
+    }
+
+    private func selectedPoint(for input: EasyAutomationRecordedInput) -> (space: String?, point: CGPoint?) {
+        if let point = input.phonePoint {
+            return ("phonePoint", point.cgPoint)
+        }
+        if let point = input.virtualPointerPoint {
+            return ("virtualPointerPoint", point.cgPoint)
+        }
+        if let point = input.localPoint {
+            return ("localPoint", point.cgPoint)
+        }
+        return (nil, nil)
+    }
+
+    private func delta(from previous: CGPoint?, to current: CGPoint?) -> CGPoint? {
+        guard let previous, let current else { return nil }
+        let result = CGPoint(x: current.x - previous.x, y: current.y - previous.y)
+        guard result.x.isFinite, result.y.isFinite else { return nil }
+        return result
+    }
+
+    private func vector(_ value: CGPoint?, dividedBy interval: Double?) -> CGPoint? {
+        guard let value, let interval, interval > .ulpOfOne else { return nil }
+        let result = CGPoint(x: value.x / interval, y: value.y / interval)
+        guard result.x.isFinite, result.y.isFinite else { return nil }
+        return result
+    }
+
+    private static func magnitude(_ point: CGPoint) -> Double {
+        hypot(Double(point.x), Double(point.y))
+    }
 }
 
 private struct EasyAutomationGeometrySnapshot: Encodable {
@@ -502,6 +755,10 @@ private struct EasyAutomationRecordedFrame: Encodable {
 private struct EasyAutomationPoint: Encodable {
     let x: Double
     let y: Double
+
+    var cgPoint: CGPoint {
+        CGPoint(x: x, y: y)
+    }
 
     init(x: Double, y: Double) {
         self.x = x

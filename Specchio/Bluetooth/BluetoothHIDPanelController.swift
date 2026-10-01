@@ -16,6 +16,10 @@ extension Notification.Name {
     static let easyAutomationInputObserved = Notification.Name("SpecchioEasyAutomationInputObserved")
 }
 
+extension NSUserInterfaceItemIdentifier {
+    static let specchioEasyFloatingToolbarPanel = NSUserInterfaceItemIdentifier("SpecchioEasyFloatingToolbarPanel")
+}
+
 enum BluetoothAutoConnectOverlayPhase: String, Equatable {
     case connecting
     case connected
@@ -138,14 +142,14 @@ enum EasyAutoUnlockHIDResult: Equatable {
     }
 }
 
-private enum EasyAutoUnlockSequenceTiming {
+enum EasyAutoUnlockSequenceTiming {
     static let homeToFirstReturn: TimeInterval = 1.75
     static let firstReturnToPIN: TimeInterval = 2.0
     static let keyHoldDuration: TimeInterval = 0.03
     static let keySpacing: TimeInterval = 0.25
 }
 
-private enum TrackpadSwipeDragMetrics {
+enum TrackpadSwipeDragMetrics {
     static let minimumHorizontalCommitDelta: CGFloat = 24
     static let horizontalDominanceRatio: CGFloat = 1.4
     static let maximumSyntheticDragFractionOfSurface: CGFloat = 0.72
@@ -161,6 +165,11 @@ private enum TrackpadSwipeDragPhase: String {
 }
 
 private enum TrackpadSwipeDragDirection: String {
+    case left
+    case right
+}
+
+enum EasyToolbarHorizontalDragDirection: String {
     case left
     case right
 }
@@ -239,6 +248,8 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     // Mouse passthrough
     var mouseLocalMonitor: Any?
     var mousePassthroughEnabled = false
+    private var mouseMonitorGeneration = 0
+    private var staleMouseMonitorDropCount = 0
     var mouseToggleBtn: NSButton!
     var mouseStatusLabel: NSTextField!
     var mouseButtonState: UInt8 = 0  // bit 0 = left, bit 1 = right
@@ -249,11 +260,17 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var isLeftMousePressedForSwipe = false
     private var didCurrentLeftPressBecomeDrag = false
     private var isDragGestureInProgress = false
+    private var isRightButtonDragGestureInProgress = false
+    private var isRightButtonDragUsingRelativeReports = false
     private var isSwipeButtonDownOnPhone = false
+    private var absoluteDragMoveLogCount = 0
+    private var pendingLeftMouseDragActivation: PendingLeftMouseDragActivation?
     private var mouseDeltaRemainderX: CGFloat = 0
     private var mouseDeltaRemainderY: CGFloat = 0
     private var easyMouseClutchModeEnabled = true
     private var easyLiveMouseEnabled = AppSettings.Defaults.easyLiveMouse
+    private var easyMouseDragActivationThresholdFraction = AppSettings.Defaults.easyMouseDragActivationThresholdFraction
+    private var easyToolbarDragYCoordinateFraction = AppSettings.Defaults.easyToolbarDragYCoordinateFraction
     private var trackpadSwipeToDragEnabled = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
     private var trackpadSwipeToDragMode = AppSettings.Defaults.easyTrackpadSwipeToDragMode
     private var trackpadSwipeDragPhase: TrackpadSwipeDragPhase = .idle
@@ -267,6 +284,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var trackpadSwipeDragStartUptime: TimeInterval = 0
     private var trackpadSwipeDragLastEventUptime: TimeInterval = 0
     private var trackpadSwipeDragSyntheticButtonDown = false
+    private var easyToolbarDragSequenceID = 0
     weak var inputWindow: NSWindow?
     private var inputSurfaceFrameInWindow: CGRect?
     private var inputSurfaceRotationDegrees = 0
@@ -294,6 +312,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     private var isAdvancedLogVisible = false
     private var inputEventDropCount = 0
     private var nonKeyMouseForwardCount = 0
+    private var auxiliaryKeyboardForwardCount = 0
     private var interruptWritesInFlight = 0
     private var mouseStatsWindowStartedAt = CACurrentMediaTime()
     private var mouseEventsAtWindowStart = 0
@@ -328,6 +347,17 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         let phonePoint: CGPoint
         let surfaceFrameInWindow: CGRect
         let wasClampedToSurface: Bool
+    }
+
+    private struct PendingLeftMouseDragActivation {
+        let downEventNumber: Int
+        let downTimestamp: TimeInterval
+        let downLocalPoint: CGPoint
+        let downPhonePoint: CGPoint
+        let inputSurfaceSize: CGSize
+        let phoneSurfaceSize: CGSize
+        let activationThresholdLocal: CGFloat
+        var suppressedMoveCount: Int
     }
 
     private struct PointerSpikeAttempt {
@@ -368,8 +398,8 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         case relativeClosedLoop
 
         init(label: String) {
-            switch label.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() {
-            case AppSettings.EasyPointerSpikeTransport.absoluteMouse, "ABS", "ABSOLUTE":
+            switch AppSettings.EasyPointerSpikeTransport.sanitized(label) {
+            case AppSettings.EasyPointerSpikeTransport.absoluteMouse:
                 self = .absoluteMouse
             default:
                 self = .relativeClosedLoop
@@ -396,7 +426,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
     }
 
     private static let absolutePointerReportID: UInt8 = 0x0B
+    private static let relativePointerReportID: UInt8 = 0x02
+    private static let consumerControlReportID: UInt8 = 0x0C
     private static let absolutePointerLogicalMax: CGFloat = 32767
+    private static let relativePointer12BitMin = -2048
+    private static let relativePointer12BitMax = 2047
 
     private var pointerSpikeTransportVariant: PointerSpikeTransportVariant {
         PointerSpikeTransportVariant(label: easyPointerSpikeVariant)
@@ -779,6 +813,37 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         appendLog("[MouseLive] setting changed reason=\(reason) resetRemainder=true movementRequires=active-key-easy-window")
     }
 
+    func setMouseDragActivationThresholdFraction(_ value: Double, reason: String) {
+        guard Thread.isMainThread else {
+            runOnMain("setMouseDragActivationThresholdFraction") { [weak self] in
+                self?.setMouseDragActivationThresholdFraction(value, reason: reason)
+            }
+            return
+        }
+
+        let sanitizedValue = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(value)
+        let previous = easyMouseDragActivationThresholdFraction
+        easyMouseDragActivationThresholdFraction = sanitizedValue
+        appendLog("[PointerABSDrag] threshold setting sync reason=\(reason) requestedFraction=\(value) previousFraction=\(previous) fraction=\(sanitizedValue) percent=\(sanitizedValue * 100) pending=\(pendingLeftMouseDragActivation != nil)")
+
+        guard previous != sanitizedValue else { return }
+        clearPendingLeftMouseDragActivation(reason: "threshold-setting-changed:\(reason)")
+    }
+
+    func setEasyToolbarDragYCoordinateFraction(_ value: Double, reason: String) {
+        guard Thread.isMainThread else {
+            runOnMain("setEasyToolbarDragYCoordinateFraction") { [weak self] in
+                self?.setEasyToolbarDragYCoordinateFraction(value, reason: reason)
+            }
+            return
+        }
+
+        let sanitizedValue = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(value)
+        let previous = easyToolbarDragYCoordinateFraction
+        easyToolbarDragYCoordinateFraction = sanitizedValue
+        appendLog("[EasyToolbarDrag] Y setting sync reason=\(reason) requestedFraction=\(value) previousFraction=\(previous) fraction=\(sanitizedValue) percent=\(sanitizedValue * 100)")
+    }
+
     func setTrackpadSwipeToDragEnabled(_ enabled: Bool, reason: String) {
         guard Thread.isMainThread else {
             runOnMain("setTrackpadSwipeToDragEnabled") { [weak self] in
@@ -939,13 +1004,13 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         let keyboardResult = channel.writeAsync(&keyboardRelease, length: UInt16(keyboardRelease.count), refcon: nil)
         appendLog("[InputGate] keyboard release writeAsync result=\(keyboardResult)")
 
-        var mouseRelease: [UInt8] = [0xA1, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00]
+        var mouseRelease: [UInt8] = [0xA1, Self.relativePointerReportID, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
         let mouseResult = channel.writeAsync(&mouseRelease, length: UInt16(mouseRelease.count), refcon: nil)
         appendLog("[InputGate] relative pointer release writeAsync result=\(mouseResult)")
 
-        var consumerRelease: [UInt8] = [0xA1, 0x02, 0x00, 0x00]
+        var consumerRelease: [UInt8] = [0xA1, Self.consumerControlReportID, 0x00, 0x00]
         let consumerResult = channel.writeAsync(&consumerRelease, length: UInt16(consumerRelease.count), refcon: nil)
-        appendLog("[InputGate] consumer release writeAsync result=\(consumerResult)")
+        appendLog("[InputGate] consumer release writeAsync result=\(consumerResult) reportID=0x\(String(format: "%02X", Self.consumerControlReportID))")
 
         if absolutePointerTransportEnabled, pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 {
             let clamped = clampPhonePointToSurface(virtualPointerPoint)
@@ -976,21 +1041,29 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         isLeftMousePressedForSwipe = false
         didCurrentLeftPressBecomeDrag = false
         isDragGestureInProgress = false
+        isRightButtonDragGestureInProgress = false
+        isRightButtonDragUsingRelativeReports = false
         isSwipeButtonDownOnPhone = false
+        absoluteDragMoveLogCount = 0
+        clearPendingLeftMouseDragActivation(reason: "input-gate-closed")
         mouseDeltaRemainderX = 0
         mouseDeltaRemainderY = 0
         lastPointerReportDelta = .zero
     }
 
-    func setEasyPointerSpikeEnabled(_ enabled: Bool, variant: String = "REL") {
+    func setEasyPointerSpikeEnabled(
+        _ enabled: Bool,
+        variant: String = AppSettings.EasyPointerSpikeTransport.defaultValue
+    ) {
         let transport = PointerSpikeTransportVariant(label: variant)
         let normalizedVariant = transport.label
+        let activeReportID = AppSettings.EasyPointerSpikeTransport.reportIDLabel(for: normalizedVariant)
         let changed = easyPointerSpikeEnabled != enabled || easyPointerSpikeVariant != normalizedVariant
         easyPointerSpikeEnabled = enabled
         easyPointerSpikeVariant = normalizedVariant
 
         guard changed else {
-            appendLog("[PointerSpike] preference unchanged enabled=\(enabled) variant=\(normalizedVariant) absoluteMouseReport=\(transport.usesAbsoluteMouseReport)")
+            appendLog("[PointerSpike] preference unchanged enabled=\(enabled) variant=\(normalizedVariant) activeReportID=\(activeReportID) absoluteMouseReport=\(transport.usesAbsoluteMouseReport)")
             return
         }
 
@@ -998,13 +1071,13 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             pendingPointerSpikeAttempts.removeAll()
             pointerSpikeSamples.removeAll()
             resetPointerCalibrationInfluence(reason: "spike-disabled")
-            appendLog("[PointerSpike] disabled variant=\(normalizedVariant) absoluteMouseReport=\(transport.usesAbsoluteMouseReport); cleared pending tap attempts")
+            appendLog("[PointerSpike] disabled variant=\(normalizedVariant) activeReportID=\(activeReportID) absoluteMouseReport=\(transport.usesAbsoluteMouseReport); cleared pending tap attempts")
             postPointerSpikeMetricsReset()
         } else {
             pendingPointerSpikeAttempts.removeAll()
             pointerSpikeSamples.removeAll()
             resetPointerCalibrationInfluence(reason: "spike-enabled")
-            appendLog("[PointerSpike] enabled variant=\(normalizedVariant) absoluteMouseReport=\(transport.usesAbsoluteMouseReport) absoluteReportID=\(Self.absolutePointerReportID) closedLoopTapPositioning=true manualRightRealignment=true descriptorRequiresForgetAndRepair=\(transport.usesAbsoluteMouseReport)")
+            appendLog("[PointerSpike] enabled variant=\(normalizedVariant) activeReportID=\(activeReportID) absoluteMouseReport=\(transport.usesAbsoluteMouseReport) absoluteReportID=\(String(format: "0x%02X", Self.absolutePointerReportID)) relativeReportID=\(String(format: "0x%02X", Self.relativePointerReportID)) appliesImmediately=true closedLoopTapPositioning=true manualRightRealignment=true")
             postPointerSpikeMetricsReset()
         }
     }
@@ -1255,7 +1328,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         isLeftMousePressedForSwipe = false
         didCurrentLeftPressBecomeDrag = false
         isDragGestureInProgress = false
+        isRightButtonDragGestureInProgress = false
+        isRightButtonDragUsingRelativeReports = false
         isSwipeButtonDownOnPhone = false
+        absoluteDragMoveLogCount = 0
+        clearPendingLeftMouseDragActivation(reason: "input-surface-rotation-reset")
         isPointerButtonDown = false
         mouseDeltaRemainderX = 0
         mouseDeltaRemainderY = 0
@@ -1409,6 +1486,169 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         movePointer(to: phonePoint, reason: "end", buttons: isPointerButtonDown ? 0x01 : 0x00)
         isPointerButtonDown = false
         sendMouseReport(buttons: 0x00, dx: 0, dy: 0, dz: 0, wheel: 0)
+    }
+
+    func performEasyToolbarHorizontalDrag(direction: EasyToolbarHorizontalDragDirection, source: String) {
+        appendLog("[EasyToolbarDrag] requested source=\(source) direction=\(direction.rawValue) connected=\(isBluetoothHIDConnected) interrupt=\(interruptChannel != nil) gate=\(replayKitInputForwardingEnabled) surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) absoluteMouseReport=\(absolutePointerTransportEnabled)")
+        guard interruptChannel != nil else {
+            appendLog("[EasyToolbarDrag] rejected source=\(source) direction=\(direction.rawValue) reason=no-interrupt-channel connected=\(isBluetoothHIDConnected)")
+            return
+        }
+        guard canForwardUserHIDInput(source: "EasyToolbarDrag") else {
+            appendLog("[EasyToolbarDrag] rejected source=\(source) direction=\(direction.rawValue) reason=input-gate-disabled gateReason=\(replayKitInputForwardingReason)")
+            return
+        }
+        guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
+            appendLog("[EasyToolbarDrag] rejected source=\(source) direction=\(direction.rawValue) reason=invalid-pointer-surface surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize))")
+            return
+        }
+
+        let trackpadDirection: TrackpadSwipeDragDirection = direction == .left ? .left : .right
+        let toolbarDragDisplayY = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(easyToolbarDragYCoordinateFraction)
+        let anchors = trackpadSwipeAnchorPoints(
+            for: trackpadDirection,
+            displayYOverride: CGFloat(toolbarDragDisplayY),
+            safeLaneSourceOverride: "toolbar-setting"
+        )
+        let pointCount = max(2, EasyAgentEndpointDefaults.defaultDragSteps)
+        let durationMilliseconds = EasyAgentEndpointDefaults.defaultDragDurationMilliseconds
+        let points = easyToolbarDragPoints(from: anchors.start, to: anchors.end, count: pointCount)
+        easyToolbarDragSequenceID += 1
+        let sequenceID = easyToolbarDragSequenceID
+        let requestID = "toolbar-\(direction.rawValue)-\(sequenceID)"
+        appendLog("[EasyToolbarDrag] accepted source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) configuredDisplayYFraction=\(toolbarDragDisplayY) configuredDisplayYPercent=\(toolbarDragDisplayY * 100) start=\(InputSurfaceDiagnostics.pointString(anchors.start)) end=\(InputSurfaceDiagnostics.pointString(anchors.end)) neutral=\(InputSurfaceDiagnostics.pointString(anchors.neutral)) points=\(points.count) durationMs=\(durationMilliseconds) surface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) transport=\(absolutePointerTransportEnabled ? "absolute" : "relative")")
+
+        Task { @MainActor in
+            await self.runEasyToolbarDragSequence(
+                points: points,
+                neutralPoint: anchors.neutral,
+                durationMilliseconds: durationMilliseconds,
+                requestID: requestID,
+                sequenceID: sequenceID,
+                direction: direction,
+                source: source
+            )
+        }
+    }
+
+    private func easyToolbarDragPoints(from start: CGPoint, to end: CGPoint, count: Int) -> [CGPoint] {
+        let pointCount = max(2, count)
+        return (0..<pointCount).map { index in
+            let fraction = CGFloat(index) / CGFloat(pointCount - 1)
+            return CGPoint(
+                x: start.x + ((end.x - start.x) * fraction),
+                y: start.y + ((end.y - start.y) * fraction)
+            )
+        }
+    }
+
+    @MainActor
+    private func runEasyToolbarDragSequence(
+        points: [CGPoint],
+        neutralPoint: CGPoint,
+        durationMilliseconds: Int,
+        requestID: String,
+        sequenceID: Int,
+        direction: EasyToolbarHorizontalDragDirection,
+        source: String
+    ) async {
+        guard points.count >= 2 else {
+            appendLog("[EasyToolbarDrag] sequence rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) reason=insufficient-points points=\(points.count)")
+            return
+        }
+
+        let clampedDurationMilliseconds = min(
+            max(durationMilliseconds, 0),
+            EasyAgentEndpointDefaults.maximumDragDurationMilliseconds
+        )
+        let intervalNanoseconds = points.count > 1
+            ? UInt64(clampedDurationMilliseconds * 1_000_000 / max(points.count - 1, 1))
+            : 0
+        let preAlignPauseNanoseconds = UInt64(EasyAgentHIDTiming.minimumPointerHoldMilliseconds * 1_000_000)
+        let downSettleNanoseconds = UInt64(EasyAgentHIDTiming.minimumPointerHoldMilliseconds * 1_000_000)
+        let neutralizePauseNanoseconds = UInt64(EasyAgentHIDTiming.minimumPointerHoldMilliseconds * 1_000_000)
+        appendLog("[EasyToolbarDrag] sequence starting source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) points=\(points.count) durationMs=\(clampedDurationMilliseconds) intervalNs=\(intervalNanoseconds) preAlignPauseNs=\(preAlignPauseNanoseconds) downSettleNs=\(downSettleNanoseconds) neutralizePauseNs=\(neutralizePauseNanoseconds) start=\(InputSurfaceDiagnostics.pointString(points[0])) end=\(InputSurfaceDiagnostics.pointString(points[points.count - 1])) neutral=\(InputSurfaceDiagnostics.pointString(neutralPoint))")
+
+        let preAlign = agentMovePointer(to: points[0], requestID: "\(requestID)-prealign")
+        guard preAlign.accepted else {
+            appendLog("[EasyToolbarDrag] sequence prealign rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(points[0])) message=\(preAlign.message)")
+            return
+        }
+        appendLog("[EasyToolbarDrag] sequence prealign accepted source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(points[0])) buttons=0")
+
+        if preAlignPauseNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: preAlignPauseNanoseconds)
+        }
+        guard sequenceID == easyToolbarDragSequenceID else {
+            appendLog("[EasyToolbarDrag] sequence superseded source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) current=\(easyToolbarDragSequenceID) requestID=\(requestID) phase=prealign-pause")
+            return
+        }
+
+        let down = agentPointerDown(at: points[0], requestID: requestID)
+        guard down.accepted else {
+            appendLog("[EasyToolbarDrag] sequence down rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) message=\(down.message)")
+            return
+        }
+        appendLog("[EasyToolbarDrag] sequence down accepted source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(points[0]))")
+
+        if downSettleNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: downSettleNanoseconds)
+        }
+        guard sequenceID == easyToolbarDragSequenceID else {
+            appendLog("[EasyToolbarDrag] sequence superseded source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) current=\(easyToolbarDragSequenceID) requestID=\(requestID) phase=down-settle; releasing pointer")
+            _ = agentPointerUp(at: points[0], requestID: requestID)
+            return
+        }
+
+        for (offset, point) in points.dropFirst().dropLast().enumerated() {
+            if intervalNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: intervalNanoseconds)
+            }
+            guard sequenceID == easyToolbarDragSequenceID else {
+                appendLog("[EasyToolbarDrag] sequence superseded source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) current=\(easyToolbarDragSequenceID) requestID=\(requestID) phase=step index=\(offset + 1); releasing pointer")
+                _ = agentPointerUp(at: point, requestID: requestID)
+                return
+            }
+
+            let step = agentDragStep(to: point, requestID: requestID)
+            guard step.accepted else {
+                appendLog("[EasyToolbarDrag] sequence step rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) index=\(offset + 1) message=\(step.message)")
+                _ = agentPointerUp(at: point, requestID: requestID)
+                return
+            }
+            appendLog("[EasyToolbarDrag] sequence step accepted source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) index=\(offset + 1) point=\(InputSurfaceDiagnostics.pointString(point))")
+        }
+
+        if intervalNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: intervalNanoseconds)
+        }
+        guard sequenceID == easyToolbarDragSequenceID else {
+            appendLog("[EasyToolbarDrag] sequence superseded source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) current=\(easyToolbarDragSequenceID) requestID=\(requestID) phase=up; releasing pointer")
+            _ = agentPointerUp(at: points[points.count - 1], requestID: requestID)
+            return
+        }
+
+        let up = agentPointerUp(at: points[points.count - 1], requestID: requestID)
+        guard up.accepted else {
+            appendLog("[EasyToolbarDrag] sequence up rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) message=\(up.message)")
+            return
+        }
+        appendLog("[EasyToolbarDrag] sequence completed source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) end=\(InputSurfaceDiagnostics.pointString(points[points.count - 1]))")
+
+        if neutralizePauseNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: neutralizePauseNanoseconds)
+        }
+        guard sequenceID == easyToolbarDragSequenceID else {
+            appendLog("[EasyToolbarDrag] sequence neutralize skipped source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) current=\(easyToolbarDragSequenceID) requestID=\(requestID) reason=superseded")
+            return
+        }
+
+        let neutralize = agentMovePointer(to: neutralPoint, requestID: "\(requestID)-neutral")
+        guard neutralize.accepted else {
+            appendLog("[EasyToolbarDrag] sequence neutralize rejected source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(neutralPoint)) message=\(neutralize.message)")
+            return
+        }
+        appendLog("[EasyToolbarDrag] sequence neutralize accepted source=\(source) direction=\(direction.rawValue) sequence=\(sequenceID) requestID=\(requestID) point=\(InputSurfaceDiagnostics.pointString(neutralPoint)) buttons=0")
     }
 
     func scrollPointer(deltaY: CGFloat) {
@@ -1775,7 +2015,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
         var report: [UInt8] = [
             0xA1,
-            0x02,
+            Self.consumerControlReportID,
             UInt8(value & 0x00FF),
             UInt8((value & 0xFF00) >> 8),
         ]
@@ -2899,6 +3139,13 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         preparedBluetoothSDPPublished = published
         appendLog("  SDP published: \(published)")
         appendLog("[BTPrepare] SDP publish result reason=\(reason) published=\(published)")
+        appendLog(
+            "[BTPrepare] HID descriptor IDs reason=\(reason) " +
+            "keyboard=0x01 relativeMouse=0x\(String(format: "%02X", Self.relativePointerReportID)) " +
+            "absoluteMouse=0x\(String(format: "%02X", Self.absolutePointerReportID)) " +
+            "consumer=0x\(String(format: "%02X", Self.consumerControlReportID)) " +
+            "descriptorPairingRequired=true"
+        )
         registerIncomingHIDChannelNotifications(reason: reason)
 
         guard let host = IOBluetoothHostController.default() else {
@@ -2907,9 +3154,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
 
         controller.bluetoothHost = host
-        host.setClassOfDevice(0x2540, forTimeInterval: 120)
-        appendLog("  Device class set to 0x2540")
-        appendLog("[BTPrepare] device class set reason=\(reason) class=0x2540")
+        host.setClassOfDevice(0x25C0, forTimeInterval: 120)
+        appendLog("  Device class set to 0x25C0")
+        appendLog("[BTPrepare] device class set reason=\(reason) class=0x25C0 subclass=combo-keyboard-pointing")
         appendLog("  Waiting for Bluetooth to power on...")
     }
 
@@ -3551,10 +3798,10 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
 
         let value: UInt16 = 1 << UInt16(bit)
-        appendLog("[Consumer] \(source) sending consumer control bit \(bit) value=0x\(String(format: "%04X", value))")
+        appendLog("[Consumer] \(source) sending consumer control bit \(bit) value=0x\(String(format: "%04X", value)) reportID=0x\(String(format: "%02X", Self.consumerControlReportID))")
 
         // Press
-        var press: [UInt8] = [0xA1, 0x02, UInt8(value & 0xFF), UInt8(value >> 8)]
+        var press: [UInt8] = [0xA1, Self.consumerControlReportID, UInt8(value & 0xFF), UInt8(value >> 8)]
         let pressResult = channel.writeAsync(&press, length: UInt16(press.count), refcon: nil)
         if pressResult != kIOReturnSuccess {
             appendLog("[Consumer] Press writeAsync failed: \(pressResult)")
@@ -3580,7 +3827,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                 self.appendLog("[InputGate] \(source) release bypassing ReplayKit gate reason=EasyAutoUnlock")
             }
             guard let channel = self.interruptChannel else { return }
-            var release: [UInt8] = [0xA1, 0x02, 0x00, 0x00]
+            var release: [UInt8] = [0xA1, Self.consumerControlReportID, 0x00, 0x00]
             let releaseResult = channel.writeAsync(&release, length: UInt16(release.count), refcon: nil)
             if releaseResult != kIOReturnSuccess {
                 self.appendLog("[Consumer] Release writeAsync failed: \(releaseResult)")
@@ -3732,7 +3979,32 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             return
         }
 
-        appendLog("[Mouse] Starting relative NSEvent monitor for mouse passthrough")
+        if mousePassthroughEnabled || mouseLocalMonitor != nil {
+            appendLog("[MouseMonitor] start requested while active enabled=\(mousePassthroughEnabled) hasMonitor=\(mouseLocalMonitor != nil) generation=\(mouseMonitorGeneration); replacing monitor")
+            if let monitor = mouseLocalMonitor {
+                NSEvent.removeMonitor(monitor)
+                mouseLocalMonitor = nil
+                appendLog("[MouseMonitor] removed current monitor before replacement generation=\(mouseMonitorGeneration)")
+            }
+            sendAllPointerButtonsReleased(reason: "replaceMouseMonitor")
+            mouseButtonState = 0
+            isMouseMovementClutched = false
+            isRightMousePressed = false
+            isLeftMousePressedForSwipe = false
+            didCurrentLeftPressBecomeDrag = false
+            isDragGestureInProgress = false
+            isRightButtonDragGestureInProgress = false
+            isRightButtonDragUsingRelativeReports = false
+            isSwipeButtonDownOnPhone = false
+            absoluteDragMoveLogCount = 0
+            clearPendingLeftMouseDragActivation(reason: "replace-mouse-monitor")
+        }
+
+        mouseMonitorGeneration &+= 1
+        let monitorGeneration = mouseMonitorGeneration
+        staleMouseMonitorDropCount = 0
+
+        appendLog("[Mouse] Starting relative NSEvent monitor for mouse passthrough generation=\(monitorGeneration)")
         appendLog("[Mouse] Input mode clutchEnabled=\(easyMouseClutchModeEnabled)")
         appendLog("[MouseLive] monitor starting enabled=\(easyLiveMouseEnabled) focusRequirement=active-key-easy-window appActive=\(NSApplication.shared.isActive) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false)")
         appendLog("[TrackpadSwipeDrag] mouse monitor starting enabled=\(trackpadSwipeToDragEnabled) mode=\(trackpadSwipeToDragMode) phase=\(trackpadSwipeDragPhase.rawValue)")
@@ -3751,9 +4023,29 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             .scrollWheel
         ]) { [weak self] event in
             guard let self, self.mousePassthroughEnabled, self.interruptChannel != nil else { return event }
+            guard self.mouseMonitorGeneration == monitorGeneration else {
+                self.staleMouseMonitorDropCount += 1
+                if self.staleMouseMonitorDropCount <= 5 || self.staleMouseMonitorDropCount % 100 == 0 {
+                    self.appendLog("[MouseMonitor] stale monitor ignored eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber) capturedGeneration=\(monitorGeneration) activeGeneration=\(self.mouseMonitorGeneration) count=\(self.staleMouseMonitorDropCount)")
+                }
+                return event
+            }
             guard self.canForwardUserHIDInput(source: "Mouse") else { return event }
-            guard self.shouldForwardInputEvent(event, source: "Mouse") else { return event }
+            guard self.shouldForwardInputEvent(event, source: "Mouse") else {
+                if self.shouldForceProcessTrackedLeftMouseRelease(event) {
+                    self.appendLog(
+                        "[PointerABSDrag] forced left release processing eventNumber=\(event.eventNumber) " +
+                        "reason=tracked-left-button-needs-release eventWindow=\(event.window?.windowNumber ?? -1) " +
+                        "targetWindow=\(self.targetInputWindow?.windowNumber ?? -1)"
+                    )
+                    self.handleNSEvent(event)
+                }
+                return event
+            }
             self.handleNSEvent(event)
+            if self.shouldSuppressLocalMouseEventAfterForwarding(event) {
+                return nil
+            }
             return event  // keep the Mac UI interactive while forwarding to iPhone
         }
 
@@ -3793,6 +4085,15 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
 
         guard event.window === targetInputWindow else {
+            if Self.isKeyboardForwardingSource(source),
+               shouldForwardKeyboardEventFromEasyAuxiliaryWindow(
+                    event,
+                    source: source,
+                    targetInputWindow: targetInputWindow
+               ) {
+                return true
+            }
+
             inputEventDropCount += 1
             if inputEventDropCount <= 5 || inputEventDropCount % 100 == 0 {
                 appendLog("[InputSurface] \(source) drop: eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow.windowNumber) targetKey=\(targetInputWindow.isKeyWindow)")
@@ -3870,6 +4171,53 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         return true
     }
 
+    private static func isKeyboardForwardingSource(_ source: String) -> Bool {
+        source == "Keyboard" || source == "Flags"
+    }
+
+    private func shouldForwardKeyboardEventFromEasyAuxiliaryWindow(
+        _ event: NSEvent,
+        source: String,
+        targetInputWindow: NSWindow
+    ) -> Bool {
+        guard NSApplication.shared.isActive else {
+            appendLog("[InputSurface] \(source) auxiliary keyboard drop reason=app-inactive eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow.windowNumber)")
+            return false
+        }
+        guard let eventWindow = event.window else {
+            appendLog("[InputSurface] \(source) auxiliary keyboard drop reason=no-event-window targetWindow=\(targetInputWindow.windowNumber)")
+            return false
+        }
+        guard eventWindow.identifier == .specchioEasyFloatingToolbarPanel else {
+            appendLog("[InputSurface] \(source) auxiliary keyboard drop reason=non-easy-auxiliary-window eventWindow=\(eventWindow.windowNumber) identifier=\(eventWindow.identifier?.rawValue ?? "nil") targetWindow=\(targetInputWindow.windowNumber)")
+            return false
+        }
+
+        auxiliaryKeyboardForwardCount += 1
+        if auxiliaryKeyboardForwardCount <= 5 || auxiliaryKeyboardForwardCount % 100 == 0 {
+            appendLog("[InputSurface] \(source) forwarding allowed from Easy auxiliary panel eventWindow=\(eventWindow.windowNumber) targetWindow=\(targetInputWindow.windowNumber) targetKey=\(targetInputWindow.isKeyWindow) appActive=\(NSApplication.shared.isActive) count=\(auxiliaryKeyboardForwardCount)")
+            recordInputSurfaceDiagnostic(
+                event: "inputEventForwarded",
+                reason: "keyboard-easy-auxiliary-window",
+                details: [
+                    "source": source,
+                    "eventType": String(event.type.rawValue),
+                    "eventWindow": String(eventWindow.windowNumber),
+                    "eventWindowIdentifier": eventWindow.identifier?.rawValue ?? "nil",
+                    "targetWindow": String(targetInputWindow.windowNumber),
+                    "targetWindowKey": String(targetInputWindow.isKeyWindow),
+                    "appActive": String(NSApplication.shared.isActive),
+                    "auxiliaryKeyboardForwardCount": String(auxiliaryKeyboardForwardCount),
+                ]
+            )
+        }
+        if inputEventDropCount != 0 {
+            appendLog("[InputSurface] \(source) forwarding resumed after drops=\(inputEventDropCount) branch=easy-auxiliary-keyboard")
+            inputEventDropCount = 0
+        }
+        return true
+    }
+
     private static func isMouseForwardingEvent(_ event: NSEvent) -> Bool {
         switch event.type {
         case .mouseMoved,
@@ -3889,6 +4237,35 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
     }
 
+    private func shouldForceProcessTrackedLeftMouseRelease(_ event: NSEvent) -> Bool {
+        guard event.type == .leftMouseUp else { return false }
+        let hasTrackedLeftPress = isLeftMousePressedForSwipe
+            || didCurrentLeftPressBecomeDrag
+            || isDragGestureInProgress
+            || isSwipeButtonDownOnPhone
+            || pendingLeftMouseDragActivation != nil
+            || (mouseButtonState & 0x01) != 0
+        if !hasTrackedLeftPress {
+            appendLog("[PointerABSDrag] forced left release skipped eventNumber=\(event.eventNumber) reason=no-tracked-left-press")
+        }
+        return hasTrackedLeftPress
+    }
+
+    private func shouldSuppressLocalMouseEventAfterForwarding(_ event: NSEvent) -> Bool {
+        switch event.type {
+        case .rightMouseDown, .rightMouseUp:
+            appendLog("[PointerABSDrag] suppressing local right-button event after forwarding eventType=\(event.type.rawValue) eventNumber=\(event.eventNumber)")
+            return true
+        case .rightMouseDragged:
+            if absoluteDragMoveLogCount <= 5 || absoluteDragMoveLogCount % 50 == 0 {
+                appendLog("[PointerABSDrag] suppressing local right drag event after forwarding eventNumber=\(event.eventNumber) dragActive=\(isRightButtonDragGestureInProgress)")
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
     private func stopMousePassthrough() {
         guard Thread.isMainThread else {
             runOnMain("stopMousePassthrough") { [weak self] in
@@ -3900,7 +4277,13 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         if let monitor = mouseLocalMonitor {
             NSEvent.removeMonitor(monitor)
             mouseLocalMonitor = nil
+            appendLog("[MouseMonitor] removed active monitor on stop generation=\(mouseMonitorGeneration)")
+        } else {
+            appendLog("[MouseMonitor] stop requested with no current monitor generation=\(mouseMonitorGeneration)")
         }
+        mouseMonitorGeneration &+= 1
+        staleMouseMonitorDropCount = 0
+        appendLog("[MouseMonitor] generation advanced on stop activeGeneration=\(mouseMonitorGeneration)")
 
         // Send mouse-all-released before stopping
         if interruptChannel != nil && mousePassthroughEnabled {
@@ -3914,7 +4297,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         isLeftMousePressedForSwipe = false
         didCurrentLeftPressBecomeDrag = false
         isDragGestureInProgress = false
+        isRightButtonDragGestureInProgress = false
+        isRightButtonDragUsingRelativeReports = false
         isSwipeButtonDownOnPhone = false
+        absoluteDragMoveLogCount = 0
+        clearPendingLeftMouseDragActivation(reason: "stop-mouse-passthrough")
         mouseDeltaRemainderX = 0
         mouseDeltaRemainderY = 0
         mouseToggleBtn?.title = "Mouse: OFF"
@@ -3946,6 +4333,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         switch event.type {
         case .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged:
             let isAbsoluteLeftDragEvent = absolutePointerTransportEnabled && event.type == .leftMouseDragged && isLeftMousePressedForSwipe
+            let isExplicitRightDragEvent = event.type == .rightMouseDragged && isRightMousePressed
             guard movementForwardingEnabled || isAbsoluteLeftDragEvent else {
                 if shouldLog {
                     appendLog("[MouseLive] Event #\(mouseEventCount): move ignored reason=\(liveMouseFocus.reason) liveMouse=\(easyLiveMouseEnabled) liveFocus=\(liveMouseFocus.active) clutchEnabled=\(easyMouseClutchModeEnabled) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) rightPressed=\(isRightMousePressed) eventWindow=\(event.window?.windowNumber ?? -1) targetWindow=\(targetInputWindow?.windowNumber ?? -1) targetKey=\(targetInputWindow?.isKeyWindow ?? false)")
@@ -3957,17 +4345,31 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             }
 
             if absolutePointerTransportEnabled {
-                let allowClampedMapping = isAbsoluteLeftDragEvent || (isDragGestureInProgress && isLeftMousePressedForSwipe)
+                let allowClampedMapping = isAbsoluteLeftDragEvent
+                    || isExplicitRightDragEvent
+                    || (isDragGestureInProgress && (isLeftMousePressedForSwipe || isRightButtonDragGestureInProgress))
                 guard let mapping = pointerInputMapping(for: event, allowClampedOutOfBounds: allowClampedMapping) else {
                     appendLog("[PointerABS] movement ignored: no valid input mapping eventType=\(event.type.rawValue) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) allowClamped=\(allowClampedMapping)")
                     return
                 }
 
+                if isExplicitRightDragEvent && !isRightButtonDragGestureInProgress {
+                    appendLog(
+                        "[PointerABSDrag] explicit right-button drag promoted trigger=rightMouseDragged " +
+                        "transport=absoluteMouseReport reportID=0x\(String(format: "%02X", Self.absolutePointerReportID)) " +
+                        "eventNumber=\(event.eventNumber) phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
+                        "clamped=\(mapping.wasClampedToSurface)"
+                    )
+                    guard startExplicitRightButtonDragIfNeeded(mapping: mapping, trigger: "rightMouseDragged") else {
+                        return
+                    }
+                }
+
                 if isAbsoluteLeftDragEvent && !isDragGestureInProgress {
+                    guard shouldPromotePendingLeftMouseDrag(mapping: mapping, event: event, trigger: "leftMouseDragged") else {
+                        return
+                    }
                     beginAbsoluteLeftDragIfNeeded(mapping: mapping, trigger: "leftMouseDragged")
-                } else if isLeftMousePressedForSwipe && isRightMousePressed && !isDragGestureInProgress {
-                    appendLog("[PointerABS] Event #\(mouseEventCount): drag armed on movement because both buttons are down")
-                    startDragGestureIfNeeded(mapping: mapping, trigger: "movement-both-buttons")
                 }
 
                 if isLeftMousePressedForSwipe && !isDragGestureInProgress {
@@ -3977,8 +4379,22 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                     return
                 }
 
-                let dragActive = isDragGestureInProgress && isLeftMousePressedForSwipe && isSwipeButtonDownOnPhone
+                let dragActive = isDragGestureInProgress
+                    && isSwipeButtonDownOnPhone
+                    && (isLeftMousePressedForSwipe || isRightButtonDragGestureInProgress)
                 let forwardedButtons: UInt8 = dragActive ? 0x01 : 0x00
+                if dragActive {
+                    absoluteDragMoveLogCount += 1
+                    if absoluteDragMoveLogCount <= 20 || absoluteDragMoveLogCount % 50 == 0 {
+                        appendLog(
+                            "[PointerABSDrag] move absolute count=\(absoluteDragMoveLogCount) eventNumber=\(event.eventNumber) " +
+                            "window=\(InputSurfaceDiagnostics.pointString(mapping.eventLocationInWindow)) " +
+                            "phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
+                            "buttons=\(forwardedButtons) liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) " +
+                            "absoluteLeftDrag=\(isAbsoluteLeftDragEvent) rightButtonDrag=\(isRightButtonDragGestureInProgress) clamped=\(mapping.wasClampedToSurface)"
+                        )
+                    }
+                }
                 let movementKind = dragActive ? "dragMoveAbsolute" : (liveMouseMovementForwarding ? "liveMoveAbsolute" : "clutchMoveAbsolute")
                 postPointerFeedback(kind: movementKind, point: mapping.phonePoint)
                 if shouldLog {
@@ -3987,7 +4403,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                         "window=\(InputSurfaceDiagnostics.pointString(mapping.eventLocationInWindow)) " +
                         "local=\(InputSurfaceDiagnostics.pointString(mapping.localPoint)) " +
                         "phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
-                        "buttons=\(forwardedButtons) dragActive=\(dragActive) liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) clamped=\(mapping.wasClampedToSurface)"
+                        "buttons=\(forwardedButtons) dragActive=\(dragActive) liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) absoluteLeftDrag=\(isAbsoluteLeftDragEvent) rightButtonDrag=\(isRightButtonDragGestureInProgress) clamped=\(mapping.wasClampedToSurface)"
                     )
                 }
                 sendAbsolutePointerReport(
@@ -4007,15 +4423,16 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                         "liveMouse": String(liveMouseMovementForwarding),
                         "liveReason": liveMouseFocus.reason,
                         "absoluteLeftDrag": String(isAbsoluteLeftDragEvent),
+                        "rightButtonDrag": String(isRightButtonDragGestureInProgress),
                         "wasClampedToSurface": String(mapping.wasClampedToSurface),
                     ]
                 )
                 return
             }
 
-            if isLeftMousePressedForSwipe && isRightMousePressed && !isDragGestureInProgress {
-                appendLog("[Mouse] Event #\(mouseEventCount): drag armed on movement because both buttons are down")
-                startDragGestureIfNeeded(mapping: nil, trigger: "movement-both-buttons")
+            if isExplicitRightDragEvent && !isRightButtonDragGestureInProgress {
+                appendLog("[PointerRELDrag] event #\(mouseEventCount): explicit right-button drag armed on movement reportID=0x\(String(format: "%02X", Self.relativePointerReportID))")
+                _ = startExplicitRightButtonDragIfNeeded(mapping: nil, trigger: "rightMouseDragged")
             }
             if isLeftMousePressedForSwipe && !isDragGestureInProgress {
                 if shouldLog {
@@ -4040,7 +4457,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             let dx = rotatedMouseDelta.x / pointerTransportScaleX
             let dy = rotatedMouseDelta.y / pointerTransportScaleY
             if dx != 0 || dy != 0 {
-                let dragActive = isDragGestureInProgress && isLeftMousePressedForSwipe && isRightMousePressed
+                let dragActive = isDragGestureInProgress
+                    && isSwipeButtonDownOnPhone
+                    && (isLeftMousePressedForSwipe || isRightButtonDragGestureInProgress)
                 let forwardedButtons: UInt8 = dragActive ? 0x01 : 0x00
                 let movementKind = dragActive ? "dragMove" : (liveMouseMovementForwarding ? "liveMove" : "clutchMove")
                 lastPointerReportDelta = CGPoint(x: dx, y: dy)
@@ -4099,42 +4518,56 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             }
 
         case .leftMouseDown:
+            if isRightButtonDragGestureInProgress {
+                appendLog("[PointerABSDrag] left DOWN ignored during active right-button drag eventNumber=\(event.eventNumber)")
+                return
+            }
+            let mapping = pointerInputMapping(for: event)
+            releaseStaleLeftMouseButtonBeforeNewDownIfNeeded(mapping: mapping, event: event)
             isLeftMousePressedForSwipe = true
             didCurrentLeftPressBecomeDrag = false
             mouseButtonState |= 0x01
             lastPointerReportDelta = .zero
-            let mapping = pointerInputMapping(for: event)
-            let shouldStartDrag = isRightMousePressed && movementForwardingEnabled
+            let shouldStartDrag = false
 
-            if shouldStartDrag {
-                startDragGestureIfNeeded(mapping: mapping, trigger: "leftMouseDown")
-            } else {
-                if let mapping {
-                    capturePointerSpikeAttemptIfNeeded(event: event, mapping: mapping)
-                    positionPointerForDeterministicTapIfNeeded(mapping: mapping, trigger: "leftMouseDown")
-                } else if easyPointerSpikeEnabled {
-                    appendLog("[PointerSpike] leftDown has no valid input mapping for tap positioning")
-                }
-                sendPointerButtonReport(buttons: 0x01, mapping: mapping, reason: "tap-button-down")
+            armPendingLeftMouseDragActivation(mapping: mapping, event: event, trigger: "leftMouseDown")
+            if let mapping {
+                capturePointerSpikeAttemptIfNeeded(event: event, mapping: mapping)
                 if absolutePointerTransportEnabled {
-                    isSwipeButtonDownOnPhone = true
-                    appendLog("[PointerABS] primary button DOWN tracked for possible click-or-drag")
+                    appendLog(
+                        "[PointerABS] tap prealign skipped trigger=leftMouseDown " +
+                        "reason=absolute-button-report-carries-position " +
+                        "target=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint))"
+                    )
+                } else {
+                    appendLog(
+                        "[PointerREL] tap prealign skipped trigger=leftMouseDown " +
+                        "reason=raw-relative-report reportID=0x\(String(format: "%02X", Self.relativePointerReportID)) " +
+                        "mappedPhone=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint))"
+                    )
                 }
-                postAutomationInputObserved(
-                    kind: "pointer",
-                    phase: "down",
-                    source: "human-mouse",
-                    event: event,
-                    mapping: mapping,
-                    phonePoint: mapping?.phonePoint ?? virtualPointerPoint,
-                    buttons: 0x01,
-                    details: [
-                        "dragStart": String(shouldStartDrag),
-                        "rightPressed": String(isRightMousePressed),
-                    ]
-                )
-                appendLog("[Mouse] Tap button DOWN")
+            } else if easyPointerSpikeEnabled {
+                appendLog("[PointerSpike] leftDown has no valid input mapping for tap positioning")
             }
+            sendPointerButtonReport(buttons: 0x01, mapping: mapping, reason: "tap-button-down")
+            if absolutePointerTransportEnabled {
+                isSwipeButtonDownOnPhone = true
+                appendLog("[PointerABS] primary button DOWN tracked for possible click-or-drag")
+            }
+            postAutomationInputObserved(
+                kind: "pointer",
+                phase: "down",
+                source: "human-mouse",
+                event: event,
+                mapping: mapping,
+                phonePoint: mapping?.phonePoint ?? virtualPointerPoint,
+                buttons: 0x01,
+                details: [
+                    "dragStart": String(shouldStartDrag),
+                    "rightPressed": String(isRightMousePressed),
+                ]
+            )
+            appendLog("[Mouse] Tap button DOWN")
             appendLog("[Mouse] Event #\(mouseEventCount): left DOWN btns=\(mouseButtonState) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed) movementForwarding=\(movementForwardingEnabled) dragStart=\(shouldStartDrag) dragInProgress=\(isDragGestureInProgress)")
 
         case .leftMouseUp:
@@ -4148,6 +4581,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
                 appendLog("[Mouse] left UP ending drag sequence dragInProgress=\(isDragGestureInProgress)")
                 finishDragGestureIfNeeded(trigger: "leftMouseUp", mapping: mapping)
             } else {
+                logPendingLeftMouseDragActivationResolvedAsTap(event: event, mapping: mapping)
                 updatePendingPointerSpikeAttemptOnMouseUpIfNeeded(event: event)
                 if let mapping {
                     postPointerFeedback(kind: "tap", point: mapping.phonePoint)
@@ -4176,6 +4610,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
             didCurrentLeftPressBecomeDrag = false
             isDragGestureInProgress = false
+            if !isRightMousePressed {
+                isRightButtonDragGestureInProgress = false
+                isRightButtonDragUsingRelativeReports = false
+            }
+            clearPendingLeftMouseDragActivation(reason: "leftMouseUp")
             appendLog("[Mouse] Event #\(mouseEventCount): left UP btns=\(mouseButtonState) clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed) movementForwarding=\(movementForwardingEnabled) dragSequence=\(wasDragSequence)")
 
         case .rightMouseDown:
@@ -4191,13 +4630,9 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
             let mapping = pointerInputMapping(for: event)
             if let mapping {
-                realignPointerToCurrentMouseLocationIfNeeded(mapping: mapping, trigger: "rightMouseDown")
-                if !deterministicPointerPositioningEnabled {
-                    virtualPointerPoint = mapping.phonePoint
-                }
-                postPointerFeedback(kind: "clutchStart", point: virtualPointerPoint)
+                _ = startExplicitRightButtonDragIfNeeded(mapping: mapping, trigger: "rightMouseDown")
             } else {
-                appendLog("[Mouse] right DOWN has no valid input mapping for manual realignment")
+                appendLog("[PointerABSDrag] explicit right-button drag could not start trigger=rightMouseDown reason=missing-mapping")
             }
 
             appendLog("[Mouse] Event #\(mouseEventCount): right DOWN suppressed locally clutchEnabled=\(easyMouseClutchModeEnabled) clutchLatched=\(isMouseMovementClutched) rightPressed=\(isRightMousePressed) movementForwarding=\(self.movementForwardingEnabled) dragInProgress=\(isDragGestureInProgress)")
@@ -4208,7 +4643,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             if easyMouseClutchModeEnabled {
                 isMouseMovementClutched = false
             }
-            if isDragGestureInProgress {
+            if isRightButtonDragGestureInProgress {
                 let mapping = pointerInputMapping(for: event, allowClampedOutOfBounds: absolutePointerTransportEnabled)
                 finishDragGestureIfNeeded(trigger: "rightMouseUp", mapping: mapping)
             }
@@ -4903,25 +5338,64 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         return scaledHorizontal < 0 ? .left : .right
     }
 
-    private func trackpadSwipeAnchorPoints(for direction: TrackpadSwipeDragDirection) -> (start: CGPoint, end: CGPoint, neutral: CGPoint) {
+    private func trackpadSwipeAnchorPoints(
+        for direction: TrackpadSwipeDragDirection,
+        displayYOverride: CGFloat? = nil,
+        safeLaneSourceOverride: String? = nil
+    ) -> (start: CGPoint, end: CGPoint, neutral: CGPoint) {
         guard InputSurfaceDiagnostics.isFinite(pointerSurfaceSize), pointerSurfaceSize.width > 0, pointerSurfaceSize.height > 0 else {
             let fallback = clampPhonePointToSurface(virtualPointerPoint)
             appendLog("[TrackpadSwipeDrag] anchor fallback direction=\(direction.rawValue) invalidSurface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) fallback=\(InputSurfaceDiagnostics.pointString(fallback))")
             return (start: fallback, end: fallback, neutral: fallback)
         }
 
-        let neutral = CGPoint(x: pointerSurfaceSize.width / 2, y: pointerSurfaceSize.height / 2)
-        let halfSwipeDistance = pointerSurfaceSize.width * TrackpadSwipeDragMetrics.maximumSyntheticDragFractionOfSurface / 2
-        let leftAnchor = clampPhonePointToSurface(CGPoint(x: neutral.x - halfSwipeDistance, y: neutral.y))
-        let rightAnchor = clampPhonePointToSurface(CGPoint(x: neutral.x + halfSwipeDistance, y: neutral.y))
-        let neutralAnchor = clampPhonePointToSurface(neutral)
+        let safeLaneDisplayY: CGFloat
+        let safeLaneSource: String
+        if let displayYOverride {
+            if displayYOverride.isFinite {
+                safeLaneDisplayY = min(max(displayYOverride, 0), 1)
+                safeLaneSource = safeLaneSourceOverride ?? "display-y-override"
+                appendLog("[TrackpadSwipeDrag] safe lane override direction=\(direction.rawValue) source=\(safeLaneSource) requestedDisplayY=\(displayYOverride) appliedDisplayY=\(safeLaneDisplayY) virtual=\(InputSurfaceDiagnostics.pointString(virtualPointerPoint))")
+            } else {
+                safeLaneDisplayY = 0.5
+                safeLaneSource = "fallback-center"
+                appendLog("[TrackpadSwipeDrag] safe lane fallback direction=\(direction.rawValue) reason=non-finite-display-y-override requestedDisplayY=\(displayYOverride) virtual=\(InputSurfaceDiagnostics.pointString(virtualPointerPoint))")
+            }
+        } else {
+            safeLaneDisplayY = 0.5
+            safeLaneSource = "default-center"
+            appendLog("[TrackpadSwipeDrag] safe lane default direction=\(direction.rawValue) source=\(safeLaneSource) displayY=\(safeLaneDisplayY)")
+        }
+
+        let halfSwipeFraction = TrackpadSwipeDragMetrics.maximumSyntheticDragFractionOfSurface / 2
+        let leftDisplayPoint = CGPoint(x: 0.5 - halfSwipeFraction, y: safeLaneDisplayY)
+        let rightDisplayPoint = CGPoint(x: 0.5 + halfSwipeFraction, y: safeLaneDisplayY)
+        let neutralDisplayPoint = CGPoint(x: 0.5, y: safeLaneDisplayY)
+        let leftAnchor = trackpadSwipePhonePoint(displayNormalizedPoint: leftDisplayPoint)
+        let rightAnchor = trackpadSwipePhonePoint(displayNormalizedPoint: rightDisplayPoint)
+        let neutralAnchor = trackpadSwipePhonePoint(displayNormalizedPoint: neutralDisplayPoint)
 
         switch direction {
         case .left:
+            appendLog("[TrackpadSwipeDrag] anchors direction=left rotation=\(inputSurfaceRotationDegrees) safeLaneSource=\(safeLaneSource) safeLaneDisplayY=\(FrameDropDiagnostics.format(Double(safeLaneDisplayY), digits: 4)) mirroredHorizontalGesture=true displayStart=\(InputSurfaceDiagnostics.pointString(rightDisplayPoint)) displayEnd=\(InputSurfaceDiagnostics.pointString(leftDisplayPoint)) phoneStart=\(InputSurfaceDiagnostics.pointString(rightAnchor)) phoneEnd=\(InputSurfaceDiagnostics.pointString(leftAnchor)) neutral=\(InputSurfaceDiagnostics.pointString(neutralAnchor))")
             return (start: rightAnchor, end: leftAnchor, neutral: neutralAnchor)
         case .right:
+            appendLog("[TrackpadSwipeDrag] anchors direction=right rotation=\(inputSurfaceRotationDegrees) safeLaneSource=\(safeLaneSource) safeLaneDisplayY=\(FrameDropDiagnostics.format(Double(safeLaneDisplayY), digits: 4)) mirroredHorizontalGesture=true displayStart=\(InputSurfaceDiagnostics.pointString(leftDisplayPoint)) displayEnd=\(InputSurfaceDiagnostics.pointString(rightDisplayPoint)) phoneStart=\(InputSurfaceDiagnostics.pointString(leftAnchor)) phoneEnd=\(InputSurfaceDiagnostics.pointString(rightAnchor)) neutral=\(InputSurfaceDiagnostics.pointString(neutralAnchor))")
             return (start: leftAnchor, end: rightAnchor, neutral: neutralAnchor)
         }
+    }
+
+    private func trackpadSwipePhonePoint(displayNormalizedPoint: CGPoint) -> CGPoint {
+        let mappedNormalizedPoint = phoneNormalizedPoint(
+            displayX: displayNormalizedPoint.x,
+            displayY: displayNormalizedPoint.y
+        )
+        return clampPhonePointToSurface(
+            CGPoint(
+                x: mappedNormalizedPoint.x * pointerSurfaceSize.width,
+                y: mappedNormalizedPoint.y * pointerSurfaceSize.height
+            )
+        )
     }
 
     private func trackpadSwipeDelayedEndPoint() -> CGPoint? {
@@ -5063,6 +5537,358 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         return parts.isEmpty ? "unknown(\(phase.rawValue))" : parts.joined(separator: "|")
     }
 
+    private func absoluteLeftMouseDragActivationThreshold(for mapping: PointerInputMapping) -> CGFloat {
+        let shortSide = min(mapping.surfaceFrameInWindow.width, mapping.surfaceFrameInWindow.height)
+        guard shortSide.isFinite, shortSide > 0 else {
+            appendLog("[PointerABSDrag] activation threshold fallback=0 reason=invalid-input-surface-size surface=\(InputSurfaceDiagnostics.rectString(mapping.surfaceFrameInWindow))")
+            return 0
+        }
+        let sanitizedFraction = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(easyMouseDragActivationThresholdFraction)
+        if sanitizedFraction != easyMouseDragActivationThresholdFraction {
+            appendLog("[PointerABSDrag] activation threshold sanitized storedFraction=\(easyMouseDragActivationThresholdFraction) appliedFraction=\(sanitizedFraction)")
+            easyMouseDragActivationThresholdFraction = sanitizedFraction
+        }
+        return shortSide * CGFloat(sanitizedFraction)
+    }
+
+    private func armPendingLeftMouseDragActivation(mapping: PointerInputMapping?, event: NSEvent, trigger: String) {
+        guard absolutePointerTransportEnabled else {
+            clearPendingLeftMouseDragActivation(reason: "\(trigger):absolute-transport-disabled")
+            return
+        }
+        guard let mapping else {
+            clearPendingLeftMouseDragActivation(reason: "\(trigger):missing-down-mapping")
+            appendLog("[PointerABSDrag] activation not armed trigger=\(trigger) eventNumber=\(event.eventNumber) reason=missing-down-mapping")
+            return
+        }
+
+        clearPendingLeftMouseDragActivation(reason: "\(trigger):rearm")
+        let threshold = absoluteLeftMouseDragActivationThreshold(for: mapping)
+        pendingLeftMouseDragActivation = PendingLeftMouseDragActivation(
+            downEventNumber: event.eventNumber,
+            downTimestamp: event.timestamp,
+            downLocalPoint: mapping.localPoint,
+            downPhonePoint: mapping.phonePoint,
+            inputSurfaceSize: mapping.surfaceFrameInWindow.size,
+            phoneSurfaceSize: pointerSurfaceSize,
+            activationThresholdLocal: threshold,
+            suppressedMoveCount: 0
+        )
+        appendLog(
+            "[PointerABSDrag] activation armed trigger=\(trigger) eventNumber=\(event.eventNumber) " +
+            "thresholdFraction=\(FrameDropDiagnostics.format(easyMouseDragActivationThresholdFraction, digits: 4)) " +
+            "thresholdLocal=\(FrameDropDiagnostics.format(Double(threshold), digits: 2)) " +
+            "downLocal=\(InputSurfaceDiagnostics.pointString(mapping.localPoint)) " +
+            "downPhone=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
+            "inputSurface=\(InputSurfaceDiagnostics.sizeString(mapping.surfaceFrameInWindow.size)) " +
+            "phoneSurface=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize))"
+        )
+    }
+
+    private func shouldPromotePendingLeftMouseDrag(mapping: PointerInputMapping, event: NSEvent, trigger: String) -> Bool {
+        guard var pending = pendingLeftMouseDragActivation else {
+            appendLog("[PointerABSDrag] activation bypassed trigger=\(trigger) eventNumber=\(event.eventNumber) reason=no-pending-left-down-state; promoting to preserve drag")
+            return true
+        }
+
+        let localDelta = CGPoint(
+            x: mapping.localPoint.x - pending.downLocalPoint.x,
+            y: mapping.localPoint.y - pending.downLocalPoint.y
+        )
+        let phoneDelta = CGPoint(
+            x: mapping.phonePoint.x - pending.downPhonePoint.x,
+            y: mapping.phonePoint.y - pending.downPhonePoint.y
+        )
+        let localDistance = hypot(localDelta.x, localDelta.y)
+        let phoneDistance = hypot(phoneDelta.x, phoneDelta.y)
+        guard localDistance.isFinite, phoneDistance.isFinite else {
+            clearPendingLeftMouseDragActivation(reason: "\(trigger):non-finite-distance")
+            appendLog(
+                "[PointerABSDrag] activation bypassed trigger=\(trigger) eventNumber=\(event.eventNumber) " +
+                "reason=non-finite-distance localDelta=\(InputSurfaceDiagnostics.pointString(localDelta)) " +
+                "phoneDelta=\(InputSurfaceDiagnostics.pointString(phoneDelta)); promoting to preserve drag"
+            )
+            return true
+        }
+
+        let elapsedMs = max(0, (event.timestamp - pending.downTimestamp) * 1000)
+        if localDistance < pending.activationThresholdLocal {
+            pending.suppressedMoveCount += 1
+            pendingLeftMouseDragActivation = pending
+            if pending.suppressedMoveCount <= 10 || pending.suppressedMoveCount % 25 == 0 {
+                appendLog(
+                    "[PointerABSDrag] activation pending trigger=\(trigger) eventNumber=\(event.eventNumber) " +
+                    "suppressedMoves=\(pending.suppressedMoveCount) " +
+                    "localDistance=\(FrameDropDiagnostics.format(Double(localDistance), digits: 2)) " +
+                    "thresholdLocal=\(FrameDropDiagnostics.format(Double(pending.activationThresholdLocal), digits: 2)) " +
+                    "phoneDistance=\(FrameDropDiagnostics.format(Double(phoneDistance), digits: 2)) " +
+                    "elapsedMs=\(FrameDropDiagnostics.format(elapsedMs, digits: 1)) " +
+                    "localDelta=\(InputSurfaceDiagnostics.pointString(localDelta)) " +
+                    "phoneDelta=\(InputSurfaceDiagnostics.pointString(phoneDelta)) " +
+                    "clamped=\(mapping.wasClampedToSurface)"
+                )
+            }
+            return false
+        }
+
+        pendingLeftMouseDragActivation = pending
+        appendLog(
+            "[PointerABSDrag] activation promoted trigger=\(trigger) eventNumber=\(event.eventNumber) " +
+            "downEventNumber=\(pending.downEventNumber) suppressedMoves=\(pending.suppressedMoveCount) " +
+            "localDistance=\(FrameDropDiagnostics.format(Double(localDistance), digits: 2)) " +
+            "thresholdLocal=\(FrameDropDiagnostics.format(Double(pending.activationThresholdLocal), digits: 2)) " +
+            "phoneDistance=\(FrameDropDiagnostics.format(Double(phoneDistance), digits: 2)) " +
+            "elapsedMs=\(FrameDropDiagnostics.format(elapsedMs, digits: 1)) " +
+            "inputSurfaceAtDown=\(InputSurfaceDiagnostics.sizeString(pending.inputSurfaceSize)) " +
+            "inputSurfaceNow=\(InputSurfaceDiagnostics.sizeString(mapping.surfaceFrameInWindow.size)) " +
+            "phoneSurfaceAtDown=\(InputSurfaceDiagnostics.sizeString(pending.phoneSurfaceSize)) " +
+            "phoneSurfaceNow=\(InputSurfaceDiagnostics.sizeString(pointerSurfaceSize)) " +
+            "clamped=\(mapping.wasClampedToSurface)"
+        )
+        return true
+    }
+
+    private func logPendingLeftMouseDragActivationResolvedAsTap(event: NSEvent, mapping: PointerInputMapping?) {
+        guard let pending = pendingLeftMouseDragActivation else { return }
+        let elapsedMs = max(0, (event.timestamp - pending.downTimestamp) * 1000)
+        let releaseDistanceText: String
+        if let mapping {
+            let localDelta = CGPoint(
+                x: mapping.localPoint.x - pending.downLocalPoint.x,
+                y: mapping.localPoint.y - pending.downLocalPoint.y
+            )
+            releaseDistanceText = FrameDropDiagnostics.format(Double(hypot(localDelta.x, localDelta.y)), digits: 2)
+        } else {
+            releaseDistanceText = "n/a"
+        }
+        appendLog(
+            "[PointerABSDrag] activation resolved as tap eventNumber=\(event.eventNumber) " +
+            "downEventNumber=\(pending.downEventNumber) suppressedMoves=\(pending.suppressedMoveCount) " +
+            "releaseLocalDistance=\(releaseDistanceText) " +
+            "thresholdLocal=\(FrameDropDiagnostics.format(Double(pending.activationThresholdLocal), digits: 2)) " +
+            "elapsedMs=\(FrameDropDiagnostics.format(elapsedMs, digits: 1)) mapped=\(mapping != nil)"
+        )
+    }
+
+    private func clearPendingLeftMouseDragActivation(reason: String, logIfPresent: Bool = true) {
+        guard let pending = pendingLeftMouseDragActivation else { return }
+        if logIfPresent {
+            appendLog(
+                "[PointerABSDrag] activation cleared reason=\(reason) downEventNumber=\(pending.downEventNumber) " +
+                "suppressedMoves=\(pending.suppressedMoveCount) " +
+                "thresholdLocal=\(FrameDropDiagnostics.format(Double(pending.activationThresholdLocal), digits: 2))"
+            )
+        }
+        pendingLeftMouseDragActivation = nil
+    }
+
+    private func releaseStaleLeftMouseButtonBeforeNewDownIfNeeded(mapping: PointerInputMapping?, event: NSEvent) {
+        let hasStaleLeftPress = isLeftMousePressedForSwipe
+            || didCurrentLeftPressBecomeDrag
+            || isDragGestureInProgress
+            || isSwipeButtonDownOnPhone
+            || pendingLeftMouseDragActivation != nil
+            || (mouseButtonState & 0x01) != 0
+        guard hasStaleLeftPress else { return }
+
+        appendLog(
+            "[PointerABSDrag] stale left state before new down eventNumber=\(event.eventNumber) " +
+            "isLeftPressed=\(isLeftMousePressedForSwipe) becameDrag=\(didCurrentLeftPressBecomeDrag) " +
+            "dragInProgress=\(isDragGestureInProgress) phoneButtonDown=\(isSwipeButtonDownOnPhone) " +
+            "mouseButtons=\(mouseButtonState) pendingActivation=\(pendingLeftMouseDragActivation != nil) " +
+            "mapped=\(mapping != nil); sending recovery release"
+        )
+        if isRightButtonDragUsingRelativeReports {
+            appendLog("[PointerRELDrag] stale state release via relative mouse report before new left down")
+            sendMouseReport(buttons: 0x00, dx: 0, dy: 0, dz: 0, wheel: 0)
+        } else {
+            sendPointerButtonReport(
+                buttons: 0x00,
+                mapping: mapping,
+                reason: "stale-left-button-release-before-new-down"
+            )
+        }
+        isLeftMousePressedForSwipe = false
+        didCurrentLeftPressBecomeDrag = false
+        isDragGestureInProgress = false
+        isRightButtonDragGestureInProgress = false
+        isRightButtonDragUsingRelativeReports = false
+        isSwipeButtonDownOnPhone = false
+        mouseButtonState &= ~0x01
+        absoluteDragMoveLogCount = 0
+        clearPendingLeftMouseDragActivation(reason: "stale-left-button-release-before-new-down")
+    }
+
+    private func handleExplicitRightButtonRelativeDragMovement(
+        event: NSEvent,
+        liveMouseFocus: (active: Bool, reason: String),
+        liveMouseMovementForwarding: Bool,
+        shouldLog: Bool
+    ) {
+        guard isRightButtonDragGestureInProgress, isRightButtonDragUsingRelativeReports else {
+            appendLog("[PointerRELDrag] movement ignored reason=relative-right-drag-not-active eventNumber=\(event.eventNumber)")
+            return
+        }
+        guard isRightMousePressed else {
+            appendLog("[PointerRELDrag] movement ignored reason=right-button-not-pressed eventNumber=\(event.eventNumber)")
+            return
+        }
+
+        let rawMouseDelta = CGPoint(x: event.deltaX, y: event.deltaY)
+        let rotatedMouseDelta = rotatedRelativePointerDelta(rawMouseDelta)
+        guard rawMouseDelta.x.isFinite,
+              rawMouseDelta.y.isFinite,
+              rotatedMouseDelta.x.isFinite,
+              rotatedMouseDelta.y.isFinite,
+              pointerTransportScaleX.isFinite,
+              pointerTransportScaleY.isFinite,
+              abs(pointerTransportScaleX) > .ulpOfOne,
+              abs(pointerTransportScaleY) > .ulpOfOne else {
+            appendLog(
+                "[PointerRELDrag] movement dropped reason=non-finite-delta-or-scale " +
+                "raw=\(InputSurfaceDiagnostics.pointString(rawMouseDelta)) " +
+                "rotated=\(InputSurfaceDiagnostics.pointString(rotatedMouseDelta)) " +
+                "rotation=\(inputSurfaceRotationDegrees) scale=(\(pointerTransportScaleX),\(pointerTransportScaleY))"
+            )
+            return
+        }
+
+        let dx = rotatedMouseDelta.x / pointerTransportScaleX
+        let dy = rotatedMouseDelta.y / pointerTransportScaleY
+        guard dx.isFinite, dy.isFinite else {
+            appendLog("[PointerRELDrag] movement dropped reason=non-finite-report-delta report=(\(dx),\(dy))")
+            return
+        }
+
+        if !isSwipeButtonDownOnPhone {
+            appendLog("[PointerRELDrag] recovered missing button-down before movement eventNumber=\(event.eventNumber)")
+            isSwipeButtonDownOnPhone = true
+            sendMouseReport(buttons: 0x01, dx: 0, dy: 0, dz: 0, wheel: 0)
+        }
+
+        guard dx != 0 || dy != 0 else {
+            if shouldLog {
+                appendLog(
+                    "[PointerRELDrag] movement accumulated zero report delta " +
+                    "raw=\(InputSurfaceDiagnostics.pointString(rawMouseDelta)) " +
+                    "rotated=\(InputSurfaceDiagnostics.pointString(rotatedMouseDelta))"
+                )
+            }
+            return
+        }
+
+        absoluteDragMoveLogCount += 1
+        lastPointerReportDelta = CGPoint(x: dx, y: dy)
+        calibrationReportDeltaSinceLastSample.x += dx
+        calibrationReportDeltaSinceLastSample.y += dy
+        let predictedPoint = CGPoint(
+            x: virtualPointerPoint.x + (dx * pointerTransportScaleX),
+            y: virtualPointerPoint.y + (dy * pointerTransportScaleY)
+        )
+        virtualPointerPoint = clampPhonePointToSurface(predictedPoint)
+        postPointerFeedback(kind: "rightButtonDragMoveRelative", point: virtualPointerPoint)
+
+        if absoluteDragMoveLogCount <= 20 || absoluteDragMoveLogCount % 50 == 0 {
+            appendLog(
+                "[PointerRELDrag] move relative count=\(absoluteDragMoveLogCount) eventNumber=\(event.eventNumber) " +
+                "raw=\(InputSurfaceDiagnostics.pointString(rawMouseDelta)) " +
+                "rotated=\(InputSurfaceDiagnostics.pointString(rotatedMouseDelta)) " +
+                "report=(\(FrameDropDiagnostics.format(Double(dx), digits: 4)),\(FrameDropDiagnostics.format(Double(dy), digits: 4))) " +
+                "buttons=1 virtual=\(InputSurfaceDiagnostics.pointString(virtualPointerPoint)) " +
+                "liveMouse=\(liveMouseMovementForwarding) liveReason=\(liveMouseFocus.reason) scale=(\(FrameDropDiagnostics.format(Double(pointerTransportScaleX), digits: 4)),\(FrameDropDiagnostics.format(Double(pointerTransportScaleY), digits: 4)))"
+            )
+        }
+
+        sendMouseDeltaWithRemainder(dx: dx, dy: dy, buttons: 0x01, reason: "rightButtonDragMoveRelative")
+        postAutomationInputObserved(
+            kind: "pointer",
+            phase: "dragMove",
+            source: "human-mouse-right-button-relative",
+            event: event,
+            phonePoint: virtualPointerPoint,
+            buttons: 0x01,
+            details: [
+                "rawDeltaX": FrameDropDiagnostics.format(Double(rawMouseDelta.x), digits: 4),
+                "rawDeltaY": FrameDropDiagnostics.format(Double(rawMouseDelta.y), digits: 4),
+                "reportDeltaX": FrameDropDiagnostics.format(Double(dx), digits: 4),
+                "reportDeltaY": FrameDropDiagnostics.format(Double(dy), digits: 4),
+                "rightButtonDrag": "true",
+                "rightButtonDragTransport": "relativeMouseReport",
+                "liveMouse": String(liveMouseMovementForwarding),
+                "liveReason": liveMouseFocus.reason,
+            ]
+        )
+    }
+
+    @discardableResult
+    private func startExplicitRightButtonDragIfNeeded(mapping: PointerInputMapping?, trigger: String) -> Bool {
+        guard isRightMousePressed else {
+            appendLog("[PointerABSDrag] explicit right-button drag ignored trigger=\(trigger) reason=right-button-not-pressed")
+            return false
+        }
+        guard !isRightButtonDragGestureInProgress else {
+            appendLog("[PointerABSDrag] explicit right-button drag already active trigger=\(trigger)")
+            return true
+        }
+        guard !isDragGestureInProgress else {
+            appendLog("[PointerABSDrag] explicit right-button drag ignored trigger=\(trigger) reason=other-drag-state-active")
+            return false
+        }
+
+        clearPendingLeftMouseDragActivation(reason: "explicit-right-button-drag:\(trigger)")
+        if absolutePointerTransportEnabled {
+            guard let mapping else {
+                appendLog("[PointerABSDrag] explicit right-button drag ignored trigger=\(trigger) reason=missing-start-mapping transport=absoluteMouseReport")
+                return false
+            }
+            appendLog(
+                "[PointerABSDrag] explicit right-button drag starting trigger=\(trigger) " +
+                "transport=absoluteMouseReport reportID=0x\(String(format: "%02X", Self.absolutePointerReportID)) " +
+                "phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) clamped=\(mapping.wasClampedToSurface)"
+            )
+            clearPendingPointerSpikeTapAttempts(reason: "explicit right-button drag began trigger=\(trigger)")
+            isDragGestureInProgress = true
+            isRightButtonDragGestureInProgress = true
+            isRightButtonDragUsingRelativeReports = false
+            absoluteDragMoveLogCount = 0
+            mouseDeltaRemainderX = 0
+            mouseDeltaRemainderY = 0
+            virtualPointerPoint = clampPhonePointToSurface(mapping.phonePoint)
+
+            appendLog(
+                "[PointerABSDrag] prealign before right-button drag trigger=\(trigger) " +
+                "buttons=0 phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) " +
+                "reason=match-6cbbb170-drag-sequence"
+            )
+            sendAbsolutePointerReport(point: mapping.phonePoint, buttons: 0x00, reason: "right-button-drag-prealign:\(trigger)")
+
+            isSwipeButtonDownOnPhone = true
+            appendLog("[PointerABSDrag] button down via absolute mouse report trigger=\(trigger) buttons=1")
+            sendAbsolutePointerReport(point: mapping.phonePoint, buttons: 0x01, reason: "right-button-drag-down:\(trigger)")
+            postPointerFeedback(kind: "rightButtonDragStartAbsolute", point: mapping.phonePoint)
+            postAutomationInputObserved(
+                kind: "pointer",
+                phase: "dragStart",
+                source: "human-mouse-right-button-absolute:\(trigger)",
+                mapping: mapping,
+                buttons: 0x01,
+                details: [
+                    "trigger": trigger,
+                    "rightButtonDrag": "true",
+                    "rightButtonDragTransport": "absoluteMouseReport",
+                    "wasClampedToSurface": String(mapping.wasClampedToSurface),
+                ]
+            )
+            return true
+        }
+
+        appendLog("[PointerRELDrag] explicit right-button drag starting trigger=\(trigger) transport=relativeMouseReport reportID=0x\(String(format: "%02X", Self.relativePointerReportID)) mapped=\(mapping != nil)")
+        isRightButtonDragGestureInProgress = true
+        isRightButtonDragUsingRelativeReports = true
+        startDragGestureIfNeeded(mapping: mapping, trigger: "explicit-right-button:\(trigger)")
+        return true
+    }
+
     private func beginAbsoluteLeftDragIfNeeded(mapping: PointerInputMapping, trigger: String) {
         guard absolutePointerTransportEnabled else {
             appendLog("[PointerABS] left-drag start ignored trigger=\(trigger): absolute transport disabled")
@@ -5078,8 +5904,11 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         }
 
         clearPendingPointerSpikeTapAttempts(reason: "absolute left drag began trigger=\(trigger)")
+        clearPendingLeftMouseDragActivation(reason: "absolute-left-drag-began:\(trigger)")
         didCurrentLeftPressBecomeDrag = true
         isDragGestureInProgress = true
+        absoluteDragMoveLogCount = 0
+        appendLog("[PointerABSDrag] start trigger=\(trigger) phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) clamped=\(mapping.wasClampedToSurface)")
         postPointerFeedback(kind: "dragStart", point: mapping.phonePoint)
         postPointerSpikeVisualization(
             phase: "dragStartAbsolute",
@@ -5114,11 +5943,20 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
     private func startDragGestureIfNeeded(mapping: PointerInputMapping?, trigger: String) {
         clearPendingPointerSpikeTapAttempts(reason: "drag began trigger=\(trigger)")
+        clearPendingLeftMouseDragActivation(reason: "drag-began:\(trigger)")
         if let mapping {
-            if absolutePointerTransportEnabled && isSwipeButtonDownOnPhone {
-                appendLog("[PointerABS] drag start trigger=\(trigger) skipping button-up realignment because primary button is already down")
+            if absolutePointerTransportEnabled {
+                if isSwipeButtonDownOnPhone {
+                    appendLog("[PointerABS] drag start trigger=\(trigger) skipping button-up realignment because primary button is already down")
+                } else {
+                    realignPointerToCurrentMouseLocationIfNeeded(mapping: mapping, trigger: "drag-start-\(trigger)")
+                }
             } else {
-                realignPointerToCurrentMouseLocationIfNeeded(mapping: mapping, trigger: "drag-start-\(trigger)")
+                appendLog(
+                    "[PointerRELDrag] manual realign skipped trigger=\(trigger) " +
+                    "reason=raw-relative-report reportID=0x\(String(format: "%02X", Self.relativePointerReportID)) " +
+                    "mappedPhone=\(InputSurfaceDiagnostics.pointString(mapping.phonePoint)) clamped=\(mapping.wasClampedToSurface)"
+                )
             }
         } else {
             appendLog("[Mouse] Drag start trigger=\(trigger) has no valid surface mapping; using current virtual pointer")
@@ -5126,6 +5964,8 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         didCurrentLeftPressBecomeDrag = true
         isDragGestureInProgress = true
+        absoluteDragMoveLogCount = 0
+        appendLog("[PointerABSDrag] start trigger=\(trigger) mapped=\(mapping != nil) phoneTopLeft=\(InputSurfaceDiagnostics.pointString(mapping?.phonePoint ?? virtualPointerPoint)) absolute=\(absolutePointerTransportEnabled) existingButtonDown=\(isSwipeButtonDownOnPhone)")
         postPointerFeedback(kind: "dragStart", point: mapping?.phonePoint ?? virtualPointerPoint)
         postAutomationInputObserved(
             kind: "pointer",
@@ -5151,9 +5991,17 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
     private func finishDragGestureIfNeeded(trigger: String, mapping: PointerInputMapping?) {
         let releasePoint = mapping?.phonePoint ?? virtualPointerPoint
+        let releaseWasRightButtonDrag = isRightButtonDragGestureInProgress
+        let releaseUsingRelativeMouseReport = releaseWasRightButtonDrag && isRightButtonDragUsingRelativeReports
+        let releaseUsingAbsoluteMouseReport = releaseWasRightButtonDrag && absolutePointerTransportEnabled && !releaseUsingRelativeMouseReport
+        let releaseTransport = releaseUsingRelativeMouseReport ? "relativeMouseReport" : (releaseUsingAbsoluteMouseReport ? "absoluteMouseReport" : "default")
         postPointerFeedback(kind: "dragEnd", point: releasePoint)
         guard isSwipeButtonDownOnPhone else {
             isDragGestureInProgress = false
+            isRightButtonDragGestureInProgress = false
+            isRightButtonDragUsingRelativeReports = false
+            absoluteDragMoveLogCount = 0
+            clearPendingLeftMouseDragActivation(reason: "drag-finish-no-button:\(trigger)")
             postAutomationInputObserved(
                 kind: "pointer",
                 phase: "dragEnd",
@@ -5172,8 +6020,13 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
 
         isSwipeButtonDownOnPhone = false
         isDragGestureInProgress = false
+        isRightButtonDragGestureInProgress = false
+        isRightButtonDragUsingRelativeReports = false
+        clearPendingLeftMouseDragActivation(reason: "drag-finished:\(trigger)")
+        appendLog("[PointerABSDrag] end trigger=\(trigger) moveCount=\(absoluteDragMoveLogCount) releaseTopLeft=\(InputSurfaceDiagnostics.pointString(releasePoint)) mapped=\(mapping != nil) clamped=\(mapping?.wasClampedToSurface ?? false)")
+        absoluteDragMoveLogCount = 0
         postPointerSpikeVisualization(
-            phase: absolutePointerTransportEnabled ? "dragEndAbsolute" : "dragEnd",
+            phase: releaseUsingRelativeMouseReport ? "dragEndRelative" : (absolutePointerTransportEnabled ? "dragEndAbsolute" : "dragEnd"),
             sequence: pendingPointerSpikeAttempts.last?.sequence ?? pointerSpikeNextSequence,
             targetPhonePoint: releasePoint,
             mappedPhonePoint: mapping?.phonePoint,
@@ -5181,17 +6034,26 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             actualPhonePoint: lastCalibrationActualPoint,
             note: "Drag end \(trigger)"
         )
-        sendPointerButtonReport(buttons: 0x00, mapping: mapping, reason: "drag-button-up:\(trigger)")
+        if releaseUsingRelativeMouseReport {
+            appendLog("[PointerRELDrag] button up via relative mouse report trigger=\(trigger) buttons=0")
+            sendMouseReport(buttons: 0x00, dx: 0, dy: 0, dz: 0, wheel: 0)
+        } else if releaseUsingAbsoluteMouseReport {
+            appendLog("[PointerABSDrag] button up via absolute mouse report trigger=\(trigger) buttons=0")
+            sendAbsolutePointerReport(point: releasePoint, buttons: 0x00, reason: "right-button-drag-up:\(trigger)")
+        } else {
+            sendPointerButtonReport(buttons: 0x00, mapping: mapping, reason: "drag-button-up:\(trigger)")
+        }
         postAutomationInputObserved(
             kind: "pointer",
             phase: "dragEnd",
-            source: "human-mouse:\(trigger)",
+            source: releaseWasRightButtonDrag ? "human-mouse-right-button-\(releaseTransport):\(trigger)" : "human-mouse:\(trigger)",
             mapping: mapping,
             phonePoint: releasePoint,
             buttons: 0x00,
             details: [
                 "mapped": String(mapping != nil),
                 "hadButtonDown": "true",
+                "rightButtonDragTransport": releaseTransport,
                 "wasClampedToSurface": String(mapping?.wasClampedToSurface ?? false),
             ]
         )
@@ -5525,8 +6387,19 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         if let event {
             userInfo["eventType"] = String(event.type.rawValue)
             userInfo["eventNumber"] = event.eventNumber
+            userInfo["nativeEventTimestamp"] = event.timestamp
+            userInfo["eventDeltaX"] = event.deltaX
+            userInfo["eventDeltaY"] = event.deltaY
+            userInfo["eventButtonNumber"] = event.buttonNumber
             userInfo["eventLocationInWindowX"] = event.locationInWindow.x
             userInfo["eventLocationInWindowY"] = event.locationInWindow.y
+            if event.type == .scrollWheel {
+                userInfo["scrollingDeltaX"] = event.scrollingDeltaX
+                userInfo["scrollingDeltaY"] = event.scrollingDeltaY
+                userInfo["hasPreciseScrollingDeltas"] = event.hasPreciseScrollingDeltas
+                userInfo["scrollPhaseRaw"] = event.phase.rawValue
+                userInfo["momentumPhaseRaw"] = event.momentumPhase.rawValue
+            }
         }
 
         let resolvedPhonePoint = phonePoint ?? mapping?.phonePoint
@@ -5753,6 +6626,8 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         interruptWritesInFlight += 1
         let shouldLog = mouseReportCount <= 10
             || mouseReportCount % 100 == 0
+            || reason.hasPrefix("tap-button")
+            || reason.hasPrefix("right-button-drag")
             || (easyPointerSpikeEnabled && !easyLiveMouseEnabled)
         if shouldLog {
             let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
@@ -6171,10 +7046,14 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         return sorted[middle]
     }
 
-    /// HID Report ID 10 (0x0A): Mouse report
-    /// Format: [0xA1, 0x0A, buttons, dx, dy, dz, wheel]
-    /// buttons: bit 0 = left, bit 1 = right
-    /// dx/dy/dz/wheel: signed -127 to 127
+    private func signed12BitRelativeValue(_ value: Int8) -> UInt16 {
+        let clamped = max(Self.relativePointer12BitMin, min(Self.relativePointer12BitMax, Int(value)))
+        return UInt16(clamped & 0x0FFF)
+    }
+
+    /// HID Report ID 2 (0x02): primary high-resolution relative mouse report.
+    /// Format: [0xA1, 0x02, buttons, reserved, xLow, xHigh4|yLow4, yHigh, wheel, reserved]
+    /// X/Y are signed 12-bit relative values, matching the LIFT-style packet shape observed in MouseRecorder.
     private func sendMouseReport(buttons: UInt8, dx: Int8, dy: Int8, dz: Int8, wheel: Int8) {
         guard let channel = interruptChannel else {
             appendLog("[Mouse] ERROR: sendMouseReport called but interruptChannel is nil")
@@ -6185,14 +7064,23 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             return
         }
 
+        if dz != 0 {
+            appendLog("[Mouse] high-resolution relative report received non-zero dz=\(dz); descriptor has no Z axis, dropping Z")
+        }
+
+        let x12 = signed12BitRelativeValue(dx)
+        let y12 = signed12BitRelativeValue(dy)
+        let packedXYMiddle = UInt8(((x12 >> 8) & 0x000F) | ((y12 & 0x000F) << 4))
         var report: [UInt8] = [
             0xA1,              // DATA | INPUT (BT HID header)
-            0x0A,              // Report ID 10 (mouse)
-            buttons,           // button state
-            UInt8(bitPattern: dx),
-            UInt8(bitPattern: dy),
-            UInt8(bitPattern: dz),
+            Self.relativePointerReportID,
+            buttons,           // button state, byte-aligned like the observed LIFT report
+            0x00,              // reserved byte
+            UInt8(x12 & 0x00FF),
+            packedXYMiddle,
+            UInt8((y12 >> 4) & 0x00FF),
             UInt8(bitPattern: wheel),
+            0x00,              // reserved byte
         ]
 
         mouseReportCount += 1
@@ -6200,7 +7088,7 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
         let shouldLog = mouseReportCount <= 10 || mouseReportCount % 100 == 0
         if shouldLog {
             let hex = report.map { String(format: "%02X", $0) }.joined(separator: " ")
-            appendLog("[Mouse] Report #\(mouseReportCount): [\(hex)] btns=\(buttons) dx=\(dx) dy=\(dy) wheel=\(wheel)")
+            appendLog("[Mouse] Report #\(mouseReportCount): [\(hex)] btns=\(buttons) dx=\(dx) dy=\(dy) x12=0x\(String(format: "%03X", x12)) y12=0x\(String(format: "%03X", y12)) wheel=\(wheel) format=relative-12bit")
         }
         if interruptWritesInFlight > 8 {
             appendLog("[MousePerf] interrupt writes backing up inFlight=\(interruptWritesInFlight) reports=\(mouseReportCount) events=\(mouseEventCount)")
@@ -7047,10 +7935,23 @@ final class BluetoothHIDPanelController: NSObject, ObservableObject, NSApplicati
             "[HID]",
             "[State]",
             "[Status] Bluetooth HID",
+            "[InputGate]",
             "[InputSurface]",
+            "[Mouse]",
+            "[MouseFirstClick]",
+            "[MouseLive]",
+            "[MouseMonitor]",
+            "[MousePerf]",
             "[MouseRotation]",
             "[Pointer]",
+            "[PointerABS]",
+            "[PointerABSDrag]",
+            "[PointerAlign]",
+            "[PointerRELDrag]",
+            "[PointerSpike]",
+            "[EasyAutomationInput]",
             "[EasyToolbar]",
+            "[EasyToolbarDrag]",
         ]
         if bracketPrefixes.contains(where: { trimmed.hasPrefix($0) }) {
             return true

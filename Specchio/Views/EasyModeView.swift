@@ -45,7 +45,7 @@ private enum EasyPremiumVideoGateSource: String, Equatable {
             return .airPlay
         case .iosScreenCaptureUSB:
             return .usbNative
-        case .screenshot, .mjpeg, .h264, .none:
+        case .coreDevice, .screenshot, .mjpeg, .h264, .none:
             return nil
         }
     }
@@ -66,6 +66,12 @@ private enum EasyVideoSourceCardKind: String {
             return "USB native"
         }
     }
+}
+
+private enum EasyIPhoneVersion: String {
+    case unselected
+    case iOS27OrLater
+    case earlier
 }
 
 private enum EasyConnectionTutorialStage: String, Equatable {
@@ -317,11 +323,13 @@ struct EasyModeView: View {
     @AppStorage(AppSettings.Keys.easyMouseClutchMode) private var easyMouseClutchMode = true
     @AppStorage(AppSettings.Keys.easyLiveMouse) private var easyLiveMouse = AppSettings.Defaults.easyLiveMouse
     @AppStorage(AppSettings.Keys.easyHideLocalCursor) private var easyHideLocalCursor = false
+    @AppStorage(AppSettings.Keys.easyMouseDragActivationThresholdFraction) private var easyMouseDragActivationThresholdFraction = AppSettings.Defaults.easyMouseDragActivationThresholdFraction
     @AppStorage(AppSettings.Keys.easyPointerSpikeEnabled) private var easyPointerSpikeEnabled = true
     @AppStorage(AppSettings.Keys.easyPointerSpikeOverlayEnabled) private var easyPointerSpikeOverlayEnabled = false
     @AppStorage(AppSettings.Keys.easyPointerSpikeTransportVariant) private var pointerSpikeVariant = AppSettings.EasyPointerSpikeTransport.defaultValue
     @AppStorage(AppSettings.Keys.easyTrackpadSwipeToDragEnabled) private var easyTrackpadSwipeToDragEnabled = AppSettings.Defaults.easyTrackpadSwipeToDragEnabled
     @AppStorage(AppSettings.Keys.easyTrackpadSwipeToDragMode) private var easyTrackpadSwipeToDragMode = AppSettings.Defaults.easyTrackpadSwipeToDragMode
+    @AppStorage(AppSettings.Keys.easyAutomationToolbarEnabled) private var easyAutomationToolbarEnabled = AppSettings.Defaults.easyAutomationToolbarEnabled
     @AppStorage(AppSettings.Keys.easyPointerDefaultsMigrated) private var easyPointerDefaultsMigrated = false
     @AppStorage(AppSettings.Keys.easyToolbarCommandOrder) private var easyToolbarCommandOrder = EasyToolbarCommand.defaultOrderStorageValue
     @AppStorage(AppSettings.Keys.easyToolbarVisibleCommandOrder) private var easyToolbarVisibleCommandOrder = EasyToolbarCommand.defaultVisibleOrderStorageValue
@@ -330,6 +338,7 @@ struct EasyModeView: View {
     @AppStorage(AppSettings.Keys.easyToolbarAlwaysVisible) private var easyToolbarAlwaysVisible = AppSettings.Defaults.easyToolbarAlwaysVisible
     @AppStorage(AppSettings.Keys.easyFloatingToolbarAnchor) private var easyFloatingToolbarAnchor = AppSettings.Defaults.easyFloatingToolbarAnchor
     @AppStorage(AppSettings.Keys.easyFloatingToolbarAllowsDragging) private var easyFloatingToolbarAllowsDragging = AppSettings.Defaults.easyFloatingToolbarAllowsDragging
+    @AppStorage(AppSettings.Keys.easyToolbarDragYCoordinateFraction) private var easyToolbarDragYCoordinateFraction = AppSettings.Defaults.easyToolbarDragYCoordinateFraction
     @AppStorage(AppSettings.Keys.alwaysOnTop) private var alwaysOnTop = false
     @AppStorage(AppSettings.Keys.autoUnlock) private var easyAutoUnlockEnabled = false
     @AppStorage(AppSettings.Keys.easyReplayKitH264TargetFPS) private var easyReplayKitH264TargetFPS = AppSettings.Defaults.easyReplayKitH264TargetFPS
@@ -337,6 +346,9 @@ struct EasyModeView: View {
     @AppStorage(AppSettings.Keys.easyUSBTargetFPS) private var easyUSBTargetFPS = AppSettings.Defaults.easyUSBTargetFPS
     @AppStorage(AppSettings.Keys.bluetoothAutoConnect) private var bluetoothAutoConnect = AppSettings.Defaults.bluetoothAutoConnect
     @AppStorage(AppSettings.Keys.easyAirPlayConnectionTutorialHidden) private var easyAirPlayConnectionTutorialHidden = AppSettings.Defaults.easyAirPlayConnectionTutorialHidden
+    @AppStorage(AppSettings.Keys.easyIPhoneVersion) private var easyIPhoneVersion = EasyIPhoneVersion.unselected
+    @StateObject private var coreDevice = CoreDeviceStreamManager()
+    @State private var sourceBeforeCoreDevice: SpecchioVideoSourceKind = .none
     @StateObject private var stream = ReplayKitScreenStreamManager()
     @StateObject private var airPlayStream = AirPlayScreenStreamManager()
     @StateObject private var iosScreenCapture = IOSScreenCaptureManager()
@@ -390,6 +402,8 @@ struct EasyModeView: View {
 
     private var activeFrame: CGImage? {
         switch appState.activeVideoSource {
+        case .coreDevice:
+            return coreDevice.currentFrame
         case .iosScreenCaptureUSB:
             guard case .live = iosScreenCapture.streamHealth else {
                 return nil
@@ -488,6 +502,7 @@ struct EasyModeView: View {
     }
 
     private var activeVideoIsLive: Bool {
+        if appState.activeVideoSource == .coreDevice { return coreDevice.currentFrame != nil }
         guard activeFrame != nil else { return false }
 
         switch appState.activeVideoSource {
@@ -530,6 +545,7 @@ struct EasyModeView: View {
     }
 
     private var activeVideoDotColor: Color {
+        if appState.activeVideoSource == .coreDevice { return .purple }
         if isUSBNativeReadyToStart {
             return .cyan
         }
@@ -564,6 +580,7 @@ struct EasyModeView: View {
     }
 
     private var activeVideoStatusBadge: String {
+        if appState.activeVideoSource == .coreDevice { return coreDevice.status }
         if isUSBNativeReadyToStart {
             return "Video Ready"
         }
@@ -602,6 +619,7 @@ struct EasyModeView: View {
     }
 
     private var activeVideoWaitingDetailText: String {
+        if appState.activeVideoSource == .coreDevice { return coreDevice.status }
         if isUSBNativeReadyToStart {
             return "Click here to start cable video"
         }
@@ -623,6 +641,7 @@ struct EasyModeView: View {
     }
 
     private var activeVideoInstructionText: String {
+        if appState.activeVideoSource == .coreDevice { return "Keep the paired iPhone unlocked on the same Wi-Fi network." }
         if isUSBNativeReadyToStart {
             return "Watch the tutorial, then start the cable video when you are ready."
         }
@@ -716,6 +735,7 @@ struct EasyModeView: View {
 
     private var isUSBVideoSourceCardVisible: Bool {
         let hasSelectedDevice = iosScreenCaptureMonitor.selectedDevice != nil
+        let hasPhysicalUSBDevice = iosScreenCaptureMonitor.isPhysicalUSBConnected
         let hasAvailableDevice: Bool
         if case .available = iosScreenCaptureMonitor.availability {
             hasAvailableDevice = true
@@ -724,11 +744,12 @@ struct EasyModeView: View {
         }
 
         let isVisible = hasSelectedDevice
+            || hasPhysicalUSBDevice
             || hasAvailableDevice
             || iosScreenCapture.currentFrame != nil
             || iosScreenCapture.isCapturing
 
-        SpecchioLogger.easyMode.debug("[EasyVideoCards] visibility source=USB visible=\(isVisible) selectedDevice=\(hasSelectedDevice) availableDevice=\(hasAvailableDevice) isCapturing=\(iosScreenCapture.isCapturing) hasFrame=\(iosScreenCapture.currentFrame != nil) health=\(iosScreenCapture.streamHealth.diagnosticDescription, privacy: .public) availability=\(iosScreenCaptureMonitor.availability.diagnosticDescription, privacy: .public)")
+        SpecchioLogger.easyMode.debug("[EasyVideoCards] visibility source=USB visible=\(isVisible) physicalUSBDevice=\(hasPhysicalUSBDevice) physicalCount=\(iosScreenCaptureMonitor.physicallyConnectedDevices.count) selectedDevice=\(hasSelectedDevice) availableDevice=\(hasAvailableDevice) isCapturing=\(iosScreenCapture.isCapturing) hasFrame=\(iosScreenCapture.currentFrame != nil) health=\(iosScreenCapture.streamHealth.diagnosticDescription, privacy: .public) availability=\(iosScreenCaptureMonitor.availability.diagnosticDescription, privacy: .public)")
         return isVisible
     }
 
@@ -878,6 +899,11 @@ struct EasyModeView: View {
                 detail = isUSBNativeStartDeferred ? "Start cable video when ready." : iosScreenCaptureMonitor.diagnosticReason
                 dotColor = .cyan
                 actionTitle = "Start"
+            } else if iosScreenCaptureMonitor.isPhysicalUSBConnected {
+                status = "Cable Connected"
+                detail = "Unlock iPhone to make cable video available."
+                dotColor = .blue
+                actionTitle = "Refresh"
             } else {
                 switch iosScreenCaptureMonitor.availability {
                 case .available:
@@ -970,7 +996,7 @@ struct EasyModeView: View {
     private var presentationHeaderMinimumContentWidth: CGFloat {
         let layout = easyToolbarLayout
         return EasyMirroringPresentationMetrics.minimumContentWidth(
-            visibleCommandCount: layout.visibleCommands.count,
+            visibleCommandCount: layout.visibleCommands.count + 1,
             hasOverflowCommands: !layout.overflowCommands.isEmpty,
             nativeControlsLeadingPadding: isPresentationHeaderVisible ? presentationHeaderNativeControlsLeadingPadding : 0
         )
@@ -1005,17 +1031,15 @@ struct EasyModeView: View {
             }
         }
         .background {
-            if usesStandardToolbar {
-                EasyPresentationWindowFocusObserver(
-                    standardControlsVisible: isPresentationHeaderVisible,
-                    standardTitlebarEnabled: standardTitlebarEnabled
-                ) { isKey, isApplicationActive, reason in
-                    handlePresentationWindowFocusChanged(
-                        isKey: isKey,
-                        isApplicationActive: isApplicationActive,
-                        reason: reason
-                    )
-                }
+            EasyPresentationWindowFocusObserver(
+                standardControlsVisible: standardControlsVisible,
+                standardTitlebarEnabled: standardTitlebarEnabled
+            ) { isKey, isApplicationActive, reason in
+                handlePresentationWindowFocusChanged(
+                    isKey: isKey,
+                    isApplicationActive: isApplicationActive,
+                    reason: reason
+                )
             }
         }
         .contentShape(Rectangle())
@@ -1041,9 +1065,8 @@ struct EasyModeView: View {
             .background {
                 EasyConnectionTutorialHostWindowReader { window, reason in
                     floatingToolbarPanel.attachHostWindow(window, reason: reason)
-                    syncFloatingToolbarPanel(reason: "host-window-\(reason)")
                     automationToolbarPanel.attachHostWindow(window, reason: reason)
-                    syncAutomationToolbarPanel(reason: "host-window-\(reason)")
+                    syncFloatingToolbarPanels(reason: "host-window-\(reason)")
                     connectionTutorialPanel.attachHostWindow(window, reason: reason)
                     airPlayPINPanel.attachHostWindow(window, reason: reason)
                     presentAirPlayPINPanelIfNeeded(source: "host-window-\(reason)")
@@ -1118,12 +1141,53 @@ struct EasyModeView: View {
         safeAreaInsets: EdgeInsets
     ) -> some View {
         content
+        .alert("CoreDevice connection problem", isPresented: Binding(
+            get: { coreDevice.connectionError != nil },
+            set: { if !$0 { coreDevice.dismissConnectionError() } }
+        )) {
+            if coreDevice.showsDeveloperModeGuide {
+                Button("Setup Guide") {
+                    coreDevice.dismissConnectionError()
+                    openDeveloperModeGuide(source: "Developer Mode disabled")
+                }
+            }
+            Button("OK", role: .cancel) { coreDevice.dismissConnectionError() }
+        } message: {
+            Text(coreDevice.connectionError ?? "The connection ended unexpectedly.")
+        }
         .onAppear {
             handleAppear(size: size, safeAreaInsets: safeAreaInsets)
         }
         .onDisappear(perform: handleDisappear)
+        .onChange(of: coreDevice.currentFrame) { _, frame in
+            if let frame { updatePhoneScreenSize(from: frame) }
+        }
+        .onChange(of: coreDevice.currentFrame == nil) { _, _ in
+            updateBluetoothInputGate(trigger: "CoreDevice frame presence changed")
+        }
+        .onChange(of: coreDevice.isStopping) { _, _ in
+            syncFloatingToolbarPanels(reason: "CoreDevice stopping changed")
+        }
+        .onChange(of: coreDevice.isActive) { _, active in
+            if !active && appState.activeVideoSource == .coreDevice {
+                appState.activeVideoSource = sourceBeforeCoreDevice
+                if let frame = activeFrame { updatePhoneScreenSize(from: frame) }
+            }
+            updateBluetoothInputGate(trigger: "CoreDevice lifecycle changed")
+            syncFloatingToolbarPanels(reason: "CoreDevice lifecycle changed")
+        }
+        .onChange(of: isPresentationWindowKey) { _, key in
+            if !key { coreDevice.send(["command": "release"]) }
+        }
         .onChange(of: size) { _, newSize in
             handleGeometryChanged(size: newSize, safeAreaInsets: safeAreaInsets)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            handleEasyModeApplicationActivationChanged(isActive: true, reason: "app-did-become-active")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            coreDevice.send(["command": "release"])
+            handleEasyModeApplicationActivationChanged(isActive: false, reason: "app-did-resign-active")
         }
         .onChange(of: isPresentationHeaderVisible) { _, isVisible in
             guard usesStandardToolbarStyle else { return }
@@ -1184,6 +1248,9 @@ struct EasyModeView: View {
         .onChange(of: easyHideLocalCursor) { _, newValue in
             handleHideLocalCursorPreferenceChanged(newValue)
         }
+        .onChange(of: easyMouseDragActivationThresholdFraction) { _, newValue in
+            handleMouseDragActivationThresholdChanged(newValue)
+        }
         .onChange(of: easyPointerSpikeEnabled) { _, newValue in
             handlePointerSpikeEnabledChanged(newValue)
         }
@@ -1192,7 +1259,7 @@ struct EasyModeView: View {
         }
         .onChange(of: replayKitPrivacyBlurEnabled) { _, newValue in
             handleReplayKitPrivacyBlurChanged(newValue)
-            syncFloatingToolbarPanel(reason: "privacy-blur-changed")
+            syncFloatingToolbarPanels(reason: "privacy-blur-changed")
         }
         .onChange(of: pointerSpikeVariant) { _, newValue in
             handlePointerSpikeVariantChanged(newValue)
@@ -1203,6 +1270,12 @@ struct EasyModeView: View {
         .onChange(of: easyTrackpadSwipeToDragMode) { oldValue, newValue in
             handleTrackpadSwipeToDragModeChanged(from: oldValue, to: newValue)
         }
+        .onChange(of: easyAutomationToolbarEnabled) { _, newValue in
+            handleAutomationToolbarEnabledChanged(newValue)
+        }
+        .onChange(of: easyToolbarDragYCoordinateFraction) { _, newValue in
+            handleToolbarDragYCoordinateChanged(newValue)
+        }
     }
 
     private func observeEasyModeToolbarPreferences<Content: View>(_ content: Content) -> some View {
@@ -1210,17 +1283,17 @@ struct EasyModeView: View {
         .onChange(of: easyToolbarCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] legacy toolbar order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "legacy-order-changed")
-            syncFloatingToolbarPanel(reason: "legacy-order-changed")
+            syncFloatingToolbarPanels(reason: "legacy-order-changed")
         }
         .onChange(of: easyToolbarVisibleCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] toolbar visible order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "visible-order-changed")
-            syncFloatingToolbarPanel(reason: "visible-order-changed")
+            syncFloatingToolbarPanels(reason: "visible-order-changed")
         }
         .onChange(of: easyToolbarOverflowCommandOrder) { _, newValue in
             SpecchioLogger.easyMode.info("[EasyModeView] toolbar overflow order changed value=\(newValue, privacy: .public)")
             normalizeEasyToolbarLayoutIfNeeded(reason: "overflow-order-changed")
-            syncFloatingToolbarPanel(reason: "overflow-order-changed")
+            syncFloatingToolbarPanels(reason: "overflow-order-changed")
         }
         .onChange(of: easyToolbarStyle) { _, newValue in
             handleToolbarStyleChanged(newValue)
@@ -1308,11 +1381,10 @@ struct EasyModeView: View {
         let toolbarReveal = easyToolbarAlwaysVisible ? "always-visible" : "top-edge"
         SpecchioLogger.easyMode.info("[EasyModeView] appeared width=\(size.width) height=\(size.height) safeLeft=\(safeAreaInsets.leading) safeRight=\(safeAreaInsets.trailing) safeBottom=\(safeAreaInsets.bottom)")
         SpecchioLogger.easyMode.info("[EasyModeView] presentation chrome=iPhoneMirroring branch=toolbar-style-\(toolbarStyle, privacy: .public) toolbarReveal=\(toolbarReveal, privacy: .public) reservedTopChrome=\(reservedTopChrome) headerPosition=\(headerPosition, privacy: .public)")
-        SpecchioLogger.easyMode.info("[EasyModeView] preferences clutchEnabled=\(easyMouseClutchMode) liveMouse=\(easyLiveMouse) hideLocalCursor=\(easyHideLocalCursor) pointerSpikeEnabled=\(easyPointerSpikeEnabled) pointerSpikeOverlayEnabled=\(easyPointerSpikeOverlayEnabled) pointerSpikeVariant=\(pointerSpikeVariant) trackpadSwipeToDrag=\(easyTrackpadSwipeToDragEnabled) trackpadSwipeMode=\(easyTrackpadSwipeToDragMode, privacy: .public)")
+        SpecchioLogger.easyMode.info("[EasyModeView] preferences clutchEnabled=\(easyMouseClutchMode) liveMouse=\(easyLiveMouse) hideLocalCursor=\(easyHideLocalCursor) mouseDragThresholdFraction=\(easyMouseDragActivationThresholdFraction) toolbarDragYFraction=\(easyToolbarDragYCoordinateFraction) pointerSpikeEnabled=\(easyPointerSpikeEnabled) pointerSpikeOverlayEnabled=\(easyPointerSpikeOverlayEnabled) pointerSpikeVariant=\(pointerSpikeVariant) trackpadSwipeToDrag=\(easyTrackpadSwipeToDragEnabled) trackpadSwipeMode=\(easyTrackpadSwipeToDragMode, privacy: .public) automations=\(easyAutomationToolbarEnabled)")
         SpecchioLogger.easyMode.info("[EasyModeView] toolbar style=\(toolbarStyle, privacy: .public) layout visible=\(easyToolbarVisibleCommandOrder, privacy: .public) overflow=\(easyToolbarOverflowCommandOrder, privacy: .public) legacy=\(easyToolbarCommandOrder, privacy: .public)")
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] preferences initial anchor=\(easyFloatingToolbarAnchor, privacy: .public) allowsDragging=\(easyFloatingToolbarAllowsDragging)")
-        syncFloatingToolbarPanel(reason: "appear")
-        syncAutomationToolbarPanel(reason: "appear")
+        syncFloatingToolbarPanels(reason: "appear")
         automationReplayEngine.refreshSessions(reason: "EasyModeView appeared")
         SpecchioLogger.easyMode.info("[EasyModeView] ReplayKit H.264 target FPS preference=\(easyReplayKitH264TargetFPS)")
         let airPlayPixels = AppSettings.easyAirPlayDisplayPixels(for: easyAirPlayQuality)
@@ -1343,9 +1415,11 @@ struct EasyModeView: View {
         viewSize = size
         bluetoothHIDPanel.setEasyMouseClutchModeEnabled(easyMouseClutchMode)
         bluetoothHIDPanel.setEasyLiveMouseEnabled(easyLiveMouse, reason: "EasyModeView appeared")
+        bluetoothHIDPanel.setMouseDragActivationThresholdFraction(easyMouseDragActivationThresholdFraction, reason: "EasyModeView appeared")
         bluetoothHIDPanel.setEasyPointerSpikeEnabled(easyPointerSpikeEnabled, variant: pointerSpikeVariant)
         bluetoothHIDPanel.setTrackpadSwipeToDragMode(easyTrackpadSwipeToDragMode, reason: "EasyModeView appeared")
         bluetoothHIDPanel.setTrackpadSwipeToDragEnabled(easyTrackpadSwipeToDragEnabled, reason: "EasyModeView appeared")
+        bluetoothHIDPanel.setEasyToolbarDragYCoordinateFraction(easyToolbarDragYCoordinateFraction, reason: "EasyModeView appeared")
         updateBluetoothInputGate(trigger: "EasyModeView appeared")
         airPlayStream.start()
         presentAirPlayPINPanelIfNeeded(source: "EasyModeView appeared")
@@ -1355,6 +1429,7 @@ struct EasyModeView: View {
     }
 
     private func handleDisappear() {
+        coreDevice.stop()
         SpecchioLogger.easyMode.info("[EasyModeView] disappeared; stopping Easy video receivers and suspending Bluetooth HID panel")
         isEasyModeVisible = false
         if automationRecorder.isRecording {
@@ -1414,14 +1489,14 @@ struct EasyModeView: View {
         }
         SpecchioLogger.easyMode.info("[EasyModeView] privacy blur frame visibility evaluated enabled=\(replayKitPrivacyBlurEnabled) hasFrame=\(!isWaitingForFrame) visible=\(replayKitPrivacyBlurVisible)")
         updateBluetoothInputGate(trigger: "\(source) frame presence changed")
-        syncAutomationToolbarPanel(reason: "\(source) frame presence changed")
+        syncFloatingToolbarPanels(reason: "\(source) frame presence changed")
     }
 
     private func handleActiveFramePresentationChanged(isWaitingForFrame: Bool) {
         SpecchioLogger.easyMode.info("[EasyModeView] active frame presentation changed waiting=\(isWaitingForFrame) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) replayKitHealth=\(stream.streamHealth.diagnosticDescription, privacy: .public) replayKitRawFrame=\(stream.currentFrame != nil) usbHealth=\(iosScreenCapture.streamHealth.diagnosticDescription, privacy: .public) usbRawFrame=\(iosScreenCapture.currentFrame != nil) airPlayHealth=\(airPlayStream.streamHealth.diagnosticDescription, privacy: .public) airPlayRawFrame=\(airPlayStream.currentFrame != nil)")
         updateBluetoothInputGate(trigger: "Easy active frame presentation changed")
         updateVideoPremiumOverlay(trigger: isWaitingForFrame ? "Easy active frame returned to waiting" : "Easy active frame visible")
-        syncAutomationToolbarPanel(reason: "Easy active frame presentation changed")
+        syncFloatingToolbarPanels(reason: "Easy active frame presentation changed")
     }
 
     private func handleReplayKitUISnapshotChanged(
@@ -1441,7 +1516,7 @@ struct EasyModeView: View {
     }
 
     private var bluetoothInputGateAllowsForwarding: Bool {
-        activeVideoIsLive
+        !coreDevice.isActive && appState.activeVideoSource != .coreDevice && activeVideoIsLive
     }
 
     private func updateBluetoothInputGate(trigger: String) {
@@ -1476,8 +1551,8 @@ struct EasyModeView: View {
     }
 
     private func syncAgentEndpointServer(reason: String) {
-        let shouldListen = isEasyModeVisible && agentEndpointEnabled
-        SpecchioLogger.agent.info("[AgentEndpoint] sync requested reason=\(reason, privacy: .public) enabled=\(agentEndpointEnabled) visible=\(isEasyModeVisible) shouldListen=\(shouldListen) listening=\(agentEndpointServer.isListening)")
+        let shouldListen = isEasyModeVisible && easyAutomationToolbarEnabled && agentEndpointEnabled
+        SpecchioLogger.agent.info("[AgentEndpoint] sync requested reason=\(reason, privacy: .public) enabled=\(agentEndpointEnabled) automationFeature=\(easyAutomationToolbarEnabled) visible=\(isEasyModeVisible) shouldListen=\(shouldListen) listening=\(agentEndpointServer.isListening)")
         if shouldListen {
             startAgentEndpointServer(reason: reason)
         } else {
@@ -1486,6 +1561,13 @@ struct EasyModeView: View {
     }
 
     private func toggleAgentEndpointServer(source: String) {
+        guard easyAutomationToolbarEnabled else {
+            SpecchioLogger.agent.info("[AgentEndpoint] toggle blocked source=\(source, privacy: .public) reason=automation-feature-disabled listening=\(agentEndpointServer.isListening)")
+            agentEndpointEnabled = false
+            syncAgentEndpointServer(reason: "toggle-blocked-\(source)")
+            return
+        }
+
         agentEndpointEnabled.toggle()
         SpecchioLogger.agent.info("[AgentEndpoint] toggle requested source=\(source, privacy: .public) enabled=\(agentEndpointEnabled) listening=\(agentEndpointServer.isListening)")
         syncAgentEndpointServer(reason: "toggle-\(source)")
@@ -1595,7 +1677,7 @@ struct EasyModeView: View {
         switch source {
         case .airPlay, .replayKit, .iosScreenCaptureUSB:
             break
-        case .screenshot, .mjpeg, .h264, .none:
+        case .coreDevice, .screenshot, .mjpeg, .h264, .none:
             SpecchioLogger.easyMode.info("[BluetoothAutoConnect] video path trigger skipped source=\(source.diagnosticName, privacy: .public) trigger=\(trigger, privacy: .public) branch=unsupported-source")
             return
         }
@@ -1710,6 +1792,69 @@ struct EasyModeView: View {
 
     private func handleHideLocalCursorPreferenceChanged(_ isEnabled: Bool) {
         SpecchioLogger.easyMode.info("[EasyModeView] hide local cursor preference changed enabled=\(isEnabled)")
+    }
+
+    private func handleMouseDragActivationThresholdChanged(_ value: Double) {
+        let sanitizedValue = AppSettings.sanitizedEasyMouseDragActivationThresholdFraction(value)
+        if sanitizedValue != value {
+            SpecchioLogger.easyMode.info("[EasyModeView] mouse drag threshold clamped requested=\(value) applied=\(sanitizedValue)")
+            easyMouseDragActivationThresholdFraction = sanitizedValue
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyModeView] mouse drag threshold changed fraction=\(sanitizedValue) percent=\(sanitizedValue * 100)")
+        bluetoothHIDPanel.setMouseDragActivationThresholdFraction(sanitizedValue, reason: "EasyMode preference changed")
+    }
+
+    private func handleToolbarDragYCoordinateChanged(_ value: Double) {
+        let sanitizedValue = AppSettings.sanitizedEasyToolbarDragYCoordinateFraction(value)
+        if sanitizedValue != value {
+            SpecchioLogger.easyMode.info("[EasyModeView] toolbar drag Y clamped requested=\(value) applied=\(sanitizedValue)")
+            easyToolbarDragYCoordinateFraction = sanitizedValue
+            return
+        }
+
+        SpecchioLogger.easyMode.info("[EasyModeView] toolbar drag Y changed fraction=\(sanitizedValue) percent=\(sanitizedValue * 100)")
+        bluetoothHIDPanel.setEasyToolbarDragYCoordinateFraction(sanitizedValue, reason: "EasyMode preference changed")
+    }
+
+    private func handleAutomationToolbarEnabledChanged(_ isEnabled: Bool) {
+        SpecchioLogger.automation.info("[EasyAutomationFeature] preference changed enabled=\(isEnabled) visible=\(isEasyModeVisible) recording=\(automationRecorder.isRecording) replaying=\(automationReplayEngine.isReplaying) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening)")
+
+        if isEnabled {
+            automationReplayEngine.refreshSessions(reason: "automation feature enabled")
+            syncFloatingToolbarPanels(reason: "automation-feature-enabled")
+            return
+        }
+
+        if automationRecorder.isRecording {
+            SpecchioLogger.automation.info("[EasyAutomationFeature] disabling feature branch=stop-recording events=\(automationRecorder.eventCount)")
+            automationRecorder.stop(
+                frame: activeFrame,
+                status: makeAgentEndpointStatusSnapshot(log: false),
+                reason: "Automation feature disabled"
+            )
+            automationReplayEngine.refreshSessions(reason: "automation feature disabled after recording stop")
+        } else {
+            SpecchioLogger.automation.info("[EasyAutomationFeature] disabling feature branch=no-active-recording")
+        }
+
+        if automationReplayEngine.isReplaying {
+            SpecchioLogger.automation.info("[EasyAutomationFeature] disabling feature branch=stop-replay")
+            stopEasyAutomationReplay(source: "automation-feature-disabled")
+        } else {
+            SpecchioLogger.automation.info("[EasyAutomationFeature] disabling feature branch=no-active-replay")
+        }
+
+        if agentEndpointEnabled || agentEndpointServer.isListening {
+            SpecchioLogger.agent.info("[AgentEndpoint] disabling because automation feature disabled enabled=\(agentEndpointEnabled) listening=\(agentEndpointServer.isListening)")
+            agentEndpointEnabled = false
+            syncAgentEndpointServer(reason: "automation-feature-disabled")
+        } else {
+            SpecchioLogger.agent.info("[AgentEndpoint] automation feature disabled branch=already-off enabled=\(agentEndpointEnabled) listening=\(agentEndpointServer.isListening)")
+        }
+
+        syncFloatingToolbarPanels(reason: "automation-feature-disabled")
     }
 
     private func handlePointerSpikeEnabledChanged(_ isEnabled: Bool) {
@@ -1904,6 +2049,15 @@ struct EasyModeView: View {
         updatePresentationHeaderTopEdge(location: location, reason: reason)
     }
 
+    private func handleEasyModeApplicationActivationChanged(isActive: Bool, reason: String) {
+        if isActive {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarGroup] application activation reason=\(reason, privacy: .public) branch=active visible=\(isEasyModeVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public) windowKey=\(isPresentationWindowKey)")
+            syncFloatingToolbarPanels(reason: reason)
+        } else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarGroup] application activation reason=\(reason, privacy: .public) branch=inactive visible=\(isEasyModeVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public) panelsRetained=true")
+        }
+    }
+
     private func handlePresentationWindowFocusChanged(
         isKey: Bool,
         isApplicationActive: Bool,
@@ -1918,12 +2072,18 @@ struct EasyModeView: View {
         if !isApplicationActive || !isKey {
             resetPresentationHeaderReveal(reason: "\(reason)-inactive-or-not-key")
         }
+
+        if isApplicationActive && isKey {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarGroup] focus sync reason=\(reason, privacy: .public) branch=active-key visible=\(isEasyModeVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public)")
+            syncFloatingToolbarPanels(reason: "\(reason)-active-key")
+        } else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarGroup] focus sync skipped reason=\(reason, privacy: .public) branch=inactive-or-not-key appActive=\(isApplicationActive) isKey=\(isKey) visible=\(isEasyModeVisible)")
+        }
     }
 
     private func handleToolbarAlwaysVisibleChanged(_ isAlwaysVisible: Bool) {
         SpecchioLogger.easyMode.info("[EasyToolbarStyle] always-visible preference changed enabled=\(isAlwaysVisible) style=\(sanitizedEasyToolbarStyle, privacy: .public) visible=\(isEasyModeVisible)")
-        syncFloatingToolbarPanel(reason: "always-visible-preference-changed")
-        syncAutomationToolbarPanel(reason: "always-visible-preference-changed")
+        syncFloatingToolbarPanels(reason: "always-visible-preference-changed")
     }
 
     private func handleToolbarStyleChanged(_ value: String) {
@@ -1938,8 +2098,7 @@ struct EasyModeView: View {
         if sanitizedValue == AppSettings.EasyToolbarStyle.floating {
             resetPresentationHeaderReveal(reason: "toolbar-style-floating")
         }
-        syncFloatingToolbarPanel(reason: "toolbar-style-changed")
-        syncAutomationToolbarPanel(reason: "toolbar-style-changed")
+        syncFloatingToolbarPanels(reason: "toolbar-style-changed")
     }
 
     private func handleFloatingToolbarAnchorChanged(_ value: String) {
@@ -1951,20 +2110,26 @@ struct EasyModeView: View {
         }
 
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] anchor preference changed anchor=\(sanitizedValue, privacy: .public)")
-        syncFloatingToolbarPanel(reason: "anchor-preference-changed")
-        syncAutomationToolbarPanel(reason: "anchor-preference-changed")
+        syncFloatingToolbarPanels(reason: "anchor-preference-changed")
     }
 
     private func handleFloatingToolbarDraggingChanged(_ allowsDragging: Bool) {
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] dragging preference changed allowsDragging=\(allowsDragging)")
-        syncFloatingToolbarPanel(reason: "dragging-preference-changed")
-        syncAutomationToolbarPanel(reason: "dragging-preference-changed")
+        syncFloatingToolbarPanels(reason: "dragging-preference-changed")
     }
 
     private func handleAlwaysOnTopChanged(_ isAlwaysOnTop: Bool) {
         SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] always-on-top preference changed enabled=\(isAlwaysOnTop)")
-        syncFloatingToolbarPanel(reason: "always-on-top-preference-changed")
-        syncAutomationToolbarPanel(reason: "always-on-top-preference-changed")
+        syncFloatingToolbarPanels(reason: "always-on-top-preference-changed")
+    }
+
+    private func syncFloatingToolbarPanels(reason: String) {
+        let sanitizedStyle = AppSettings.EasyToolbarStyle.sanitized(easyToolbarStyle)
+        let mainAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(easyFloatingToolbarAnchor)
+        let automationAnchor = oppositeFloatingToolbarAnchor(for: mainAnchor)
+        SpecchioLogger.easyMode.info("[EasyFloatingToolbarGroup] sync requested reason=\(reason, privacy: .public) visible=\(isEasyModeVisible) style=\(sanitizedStyle, privacy: .public) mainAnchor=\(mainAnchor, privacy: .public) automationAnchor=\(automationAnchor, privacy: .public) appActive=\(NSApplication.shared.isActive) windowKey=\(isPresentationWindowKey) presentationAppActive=\(isPresentationApplicationActive)")
+        syncFloatingToolbarPanel(reason: "\(reason)-main")
+        syncAutomationToolbarPanel(reason: "\(reason)-automation")
     }
 
     private func syncFloatingToolbarPanel(reason: String) {
@@ -2028,7 +2193,8 @@ struct EasyModeView: View {
             },
             rotateScreen: rotatePhoneDisplay,
             disconnectStream: disconnectEasyVideoStream,
-            performEasyAutoUnlock: performEasyAutoUnlock
+            performEasyAutoUnlock: performEasyAutoUnlock,
+            performDeviceCommand: performDeviceCommand
         )
 
         floatingToolbarPanel.update(
@@ -2046,6 +2212,21 @@ struct EasyModeView: View {
     private func syncAutomationToolbarPanel(reason: String) {
         let mainAnchor = AppSettings.EasyFloatingToolbarAnchor.sanitized(easyFloatingToolbarAnchor)
         let automationAnchor = oppositeFloatingToolbarAnchor(for: mainAnchor)
+        guard easyAutomationToolbarEnabled else {
+            SpecchioLogger.automation.info("[EasyAutomationToolbarPanel] sync requested reason=\(reason, privacy: .public) branch=feature-disabled visible=\(isEasyModeVisible) mainAnchor=\(mainAnchor, privacy: .public) automationAnchor=\(automationAnchor, privacy: .public) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening) framePresent=\(activeFrame != nil)")
+            automationToolbarPanel.update(
+                isVisible: false,
+                toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
+                alwaysOnTop: alwaysOnTop,
+                anchor: automationAnchor,
+                allowsDragging: false,
+                layoutLog: "featureEnabled=false mainAnchor=\(mainAnchor) automationAnchor=\(automationAnchor)",
+                rootView: AnyView(EmptyView()),
+                reason: "\(reason)-feature-disabled"
+            )
+            return
+        }
+
         let content = EasyAutomationToolbar(
             recorder: automationRecorder,
             replayEngine: automationReplayEngine,
@@ -2064,7 +2245,7 @@ struct EasyModeView: View {
             toggleAgentEndpointServer(source: "automation-toolbar")
         }
 
-        SpecchioLogger.automation.info("[EasyAutomationToolbarPanel] sync requested reason=\(reason, privacy: .public) visible=\(isEasyModeVisible) mainAnchor=\(mainAnchor, privacy: .public) automationAnchor=\(automationAnchor, privacy: .public) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening) framePresent=\(activeFrame != nil)")
+        SpecchioLogger.automation.info("[EasyAutomationToolbarPanel] sync requested reason=\(reason, privacy: .public) branch=feature-enabled visible=\(isEasyModeVisible) mainAnchor=\(mainAnchor, privacy: .public) automationAnchor=\(automationAnchor, privacy: .public) agentEnabled=\(agentEndpointEnabled) agentListening=\(agentEndpointServer.isListening) framePresent=\(activeFrame != nil)")
         automationToolbarPanel.update(
             isVisible: isEasyModeVisible,
             toolbarAlwaysVisiblePreference: easyToolbarAlwaysVisible,
@@ -2088,8 +2269,37 @@ struct EasyModeView: View {
         }
     }
 
+    private func performDeviceCommand(_ command: EasyToolbarCommand, source: String) {
+        let usesCoreDevice = coreDevice.isActive || appState.activeVideoSource == .coreDevice
+        SpecchioLogger.easyMode.info("[EasyToolbarRoute] source=\(source, privacy: .public) command=\(command.rawValue, privacy: .public) pipeline=\(usesCoreDevice ? "CoreDevice" : "Bluetooth", privacy: .public)")
+        if usesCoreDevice {
+            coreDevice.performToolbar(command, rotation: phoneDisplayRotationDegrees, dragY: easyToolbarDragYCoordinateFraction)
+            return
+        }
+        switch command {
+        case .search: bluetoothHIDPanel.sendKeyboardShortcutCommand(name: command.title, modifiers: 0x08, keyCodes: [0x2C], holdDuration: 0.05)
+        case .volumeDown: bluetoothHIDPanel.sendConsumerControlCommand(bit: 9, name: command.title)
+        case .volumeUp: bluetoothHIDPanel.sendConsumerControlCommand(bit: 10, name: command.title)
+        case .mute: bluetoothHIDPanel.sendConsumerControlCommand(bit: 8, name: command.title)
+        case .home:
+            recordEasyHomeCommandDiagnostic(source: source, displayRotationDegrees: phoneDisplayRotationDegrees)
+            bluetoothHIDPanel.sendConsumerControlCommand(bit: 2, name: command.title)
+        case .dragLeft: bluetoothHIDPanel.performEasyToolbarHorizontalDrag(direction: .left, source: source)
+        case .dragRight: bluetoothHIDPanel.performEasyToolbarHorizontalDrag(direction: .right, source: source)
+        case .screenshot: bluetoothHIDPanel.sendKeyboardShortcutCommand(name: command.title, modifiers: 0x0A, keyCodes: [0x20], holdDuration: 0.05)
+        case .switchApps: bluetoothHIDPanel.sendKeyboardShortcutCommand(name: command.title, modifiers: 0x08, keyCodes: [0x2B], holdDuration: 0.12)
+        case .appSwitcher: bluetoothHIDPanel.sendKeyboardShortcutCommand(name: command.title, modifiers: 0x08, keyCodes: [0x2B], holdDuration: 0.45)
+        default: SpecchioLogger.easyMode.info("[EasyToolbarRoute] local action ignored by device router")
+        }
+    }
+
     private func performEasyAutoUnlock(source: String) {
-        let passcode = PasscodeManager().load()
+        guard easyAutoUnlockEnabled else {
+            SpecchioLogger.easyMode.info("[EasyAutoUnlock] skipped before Keychain access: setting disabled")
+            showEasyAutoUnlockFeedback(.disabled)
+            return
+        }
+        let passcode = PasscodeManager().load(allowAuthenticationUI: true)
         let hasPasscode = passcode?.isEmpty == false
         SpecchioLogger.easyMode.info("[EasyAutoUnlock] requested source=\(source, privacy: .public) settingEnabled=\(easyAutoUnlockEnabled) hasPasscode=\(hasPasscode) bluetoothConnected=\(bluetoothHIDPanel.isBluetoothHIDConnected) activeVideoSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) hasActiveFrame=\(activeFrame != nil)")
 
@@ -2099,9 +2309,17 @@ struct EasyModeView: View {
             return
         }
 
-        guard easyAutoUnlockEnabled else {
-            SpecchioLogger.easyMode.info("[EasyAutoUnlock] blocked source=\(source, privacy: .public) reason=setting-disabled")
-            showEasyAutoUnlockFeedback(.disabled)
+        if coreDevice.isActive || appState.activeVideoSource == .coreDevice {
+            let mapped = passcode.compactMap { BluetoothHIDPanelController.charToHID($0) }
+            guard mapped.count == passcode.count else {
+                showEasyAutoUnlockFeedback(.unsupportedCharacters(passcode.count - mapped.count))
+                return
+            }
+            let pin = mapped.map { code, modifiers in
+                [Int(code)] + (0..<8).compactMap { modifiers & (1 << $0) != 0 ? 224 + $0 : nil }
+            }
+            let accepted = coreDevice.performToolbar(.autoUnlock, rotation: phoneDisplayRotationDegrees, dragY: easyToolbarDragYCoordinateFraction, pin: pin)
+            showEasyAutoUnlockFeedback(accepted ? .started : .coreDeviceUnavailable)
             return
         }
 
@@ -2186,6 +2404,7 @@ struct EasyModeView: View {
     }
 
     private func disconnectEasyVideoStream(source: String) {
+        if coreDevice.isActive { coreDevice.stop(); return }
         let hadReplayKitFrame = stream.currentFrame != nil
         let hadAirPlayFrame = airPlayStream.currentFrame != nil
         let hadNativeFrame = iosScreenCapture.currentFrame != nil
@@ -2238,6 +2457,7 @@ struct EasyModeView: View {
     }
 
     private func handleVideoSourceCardAction(_ kind: EasyVideoSourceCardKind) {
+        if coreDevice.isActive { coreDevice.stop(); return }
         selectedVideoSourceCardKind = kind
         SpecchioLogger.easyMode.info("[EasyVideoCards] action selected kind=\(kind.rawValue, privacy: .public) cards=\(videoSourceCardsLogSummary, privacy: .public)")
 
@@ -2457,6 +2677,7 @@ struct EasyModeView: View {
     }
 
     private func startReplayKitReceiver(trigger: String, selectAsActiveSource: Bool) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] automatic source selection suspended"); return }
         SpecchioLogger.easyMode.info("[EasyModeView] ReplayKit receiver start requested trigger=\(trigger, privacy: .public) selectAsActiveSource=\(selectAsActiveSource) previousSource=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
         if selectAsActiveSource {
             appState.activeVideoSource = .replayKit
@@ -2494,6 +2715,7 @@ struct EasyModeView: View {
     }
 
     private func startBestAvailableVideoSource(trigger: String, autoStartNativeUSB: Bool = true) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] automatic source selection suspended"); return }
         SpecchioLogger.iosScreenCapture.info("[EasyModeView] startBestAvailableVideoSource trigger=\(trigger, privacy: .public) currentSource=\(appState.activeVideoSource.diagnosticName, privacy: .public) autoStartNativeUSB=\(autoStartNativeUSB)")
         iosScreenCaptureMonitor.refreshDevices(trigger: "EasyMode \(trigger)")
 
@@ -2515,6 +2737,7 @@ struct EasyModeView: View {
 
     @discardableResult
     private func startNativeUSBVideoIfAvailable(trigger: String) -> Bool {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] native USB selection suspended"); return false }
         guard let selected = iosScreenCaptureMonitor.selectedDevice else {
             SpecchioLogger.iosScreenCapture.info("[EasyModeView] native USB start skipped trigger=\(trigger, privacy: .public) reason=\(iosScreenCaptureMonitor.diagnosticReason, privacy: .public)")
             return false
@@ -2651,7 +2874,7 @@ struct EasyModeView: View {
             }
         case .none, .iosScreenCaptureUSB:
             startReplayKitReceiverForFallback(trigger: "USB native deferred: \(reason)")
-        case .airPlay, .screenshot, .mjpeg, .h264:
+        case .coreDevice, .airPlay, .screenshot, .mjpeg, .h264:
             SpecchioLogger.iosScreenCapture.info("[EasyModeView] preserving active video source while USB native start is deferred trigger=\(trigger, privacy: .public) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
         }
     }
@@ -2669,6 +2892,7 @@ struct EasyModeView: View {
     }
 
     private func startReplayKitReceiverForFallback(trigger: String) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] automatic source selection suspended"); return }
         SpecchioLogger.iosScreenCapture.info("[EasyModeView] fallback path selected source=ReplayKit trigger=\(trigger, privacy: .public)")
         appState.activeVideoSource = .replayKit
         startReplayKitReceiver(trigger: trigger)
@@ -2693,6 +2917,7 @@ struct EasyModeView: View {
         _ availability: IOSScreenCaptureAvailability,
         trigger: String
     ) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] background source callback retained without selection"); return }
         SpecchioLogger.iosScreenCapture.info("[EasyModeView] USB native availability changed trigger=\(trigger, privacy: .public) availability=\(availability.diagnosticDescription, privacy: .public) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
 
         switch availability {
@@ -2737,6 +2962,7 @@ struct EasyModeView: View {
         from oldValue: IOSScreenCaptureHealth,
         to newValue: IOSScreenCaptureHealth
     ) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] background source callback retained without selection"); return }
         SpecchioLogger.iosScreenCapture.info("[EasyModeView] USB native health changed from=\(oldValue.diagnosticDescription, privacy: .public) to=\(newValue.diagnosticDescription, privacy: .public)")
         updateBluetoothInputGate(trigger: "USB native health changed")
 
@@ -2770,6 +2996,7 @@ struct EasyModeView: View {
         from oldValue: AirPlayStreamHealth,
         to newValue: AirPlayStreamHealth
     ) {
+        guard !coreDevice.isActive else { SpecchioLogger.easyMode.info("[CoreDevice] background source callback retained without selection"); return }
         SpecchioLogger.easyMode.info("[EasyModeView] AirPlay health changed from=\(oldValue.diagnosticDescription, privacy: .public) to=\(newValue.diagnosticDescription, privacy: .public) framePresent=\(airPlayStream.currentFrame != nil) activeSource=\(appState.activeVideoSource.diagnosticName, privacy: .public)")
         updateBluetoothInputGate(trigger: "AirPlay health changed")
 
@@ -3139,6 +3366,11 @@ struct EasyModeView: View {
             rotatedPhoneSurface(displaySize: layout.phoneSize)
                 .frame(width: layout.phoneSize.width, height: layout.phoneSize.height)
                 .overlay {
+                    if appState.activeVideoSource == .coreDevice, let frame = coreDevice.currentFrame {
+                        CoreDeviceInputSurface(image: frame, rotationDegrees: phoneDisplayRotationDegrees, send: coreDevice.send)
+                    }
+                }
+                .overlay {
                     if videoPremiumOverlaySource != nil {
                         videoPremiumOverlay
                     }
@@ -3214,7 +3446,7 @@ struct EasyModeView: View {
         let orientationChanges = isSidewaysRotation(currentRotation) != isSidewaysRotation(nextRotation)
         SpecchioLogger.easyMode.info("[EasyRotation] toggle selected source=\(source, privacy: .public) from=\(currentRotation) to=\(nextRotation) orientationChanges=\(orientationChanges) measuredSurfaceWidth=\(phoneSurfaceSize.width) measuredSurfaceHeight=\(phoneSurfaceSize.height) availableWidth=\(phoneSurfaceAvailableSize.width) availableHeight=\(phoneSurfaceAvailableSize.height)")
         phoneDisplayRotationDegrees = nextRotation
-        syncFloatingToolbarPanel(reason: "display-rotation-changed")
+        syncFloatingToolbarPanels(reason: "display-rotation-changed")
     }
 
     private func applyEasyPointerDefaultsIfNeeded() {
@@ -3273,6 +3505,28 @@ struct EasyModeView: View {
                     EasyBluetoothGestureFeedbackOverlay(phoneScreenSize: phoneScreenSize)
                 }
 
+            } else if appState.activeVideoSource == .coreDevice {
+                VStack(spacing: 24) {
+                    ProgressView()
+                    Text(coreDevice.status)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text("Keep your iPhone unlocked and on the same Wi-Fi network. Specchio will keep trying until you cancel.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button(coreDevice.isStopping ? "Cancelling…" : "Cancel Connection") {
+                        SpecchioLogger.easyMode.info("[CoreDevice] connection cancelled from waiting screen")
+                        coreDevice.stop()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(coreDevice.isStopping)
+                }
+                .frame(maxWidth: 420)
+                .padding(.horizontal, 24)
+                .onAppear {
+                    SpecchioLogger.easyMode.info("[CoreDevice] connection waiting screen displayed cancellationAvailable=true")
+                }
             } else {
                 waitingView(snapshot: replayKitUISnapshot)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -3331,7 +3585,7 @@ struct EasyModeView: View {
         }
         .overlay(alignment: .bottom) {
             VStack(spacing: 8) {
-                if let overlay = bluetoothHIDPanel.bluetoothAutoConnectOverlay {
+                if !coreDevice.isActive, let overlay = bluetoothHIDPanel.bluetoothAutoConnectOverlay {
                     EasyBluetoothAutoConnectOverlay(state: overlay) {
                         handleBluetoothAutoConnectOverlayTapped(overlay)
                     }
@@ -3415,7 +3669,8 @@ struct EasyModeView: View {
                 easyAutoUnlockFeedback: $easyAutoUnlockFeedback,
                 rotateScreen: rotatePhoneDisplay,
                 disconnectStream: disconnectEasyVideoStream,
-                performEasyAutoUnlock: performEasyAutoUnlock
+                performEasyAutoUnlock: performEasyAutoUnlock,
+                performDeviceCommand: performDeviceCommand
             )
         }
         .environment(\.colorScheme, .dark)
@@ -3460,11 +3715,32 @@ struct EasyModeView: View {
                 easyAutoUnlockFeedback: $easyAutoUnlockFeedback,
                 rotateScreen: rotatePhoneDisplay,
                 disconnectStream: disconnectEasyVideoStream,
-                performEasyAutoUnlock: performEasyAutoUnlock
+                performEasyAutoUnlock: performEasyAutoUnlock,
+                performDeviceCommand: performDeviceCommand
             )
         }
         .onAppear {
             SpecchioLogger.easyMode.info("[EasyControlBar] toolbar layout visibleCount=\(visibleCommands.count) overflowCount=\(overflowCommands.count) visibleCommands=\(EasyToolbarCommand.storageValue(for: visibleCommands), privacy: .public) overflowCommands=\(EasyToolbarCommand.storageValue(for: overflowCommands), privacy: .public) maxVisible=\(EasyToolbarCommandLayout.maximumVisibleCommandCount)")
+        }
+    }
+
+    private func startCoreDeviceConnection(source: String) {
+        SpecchioLogger.easyMode.info("[CoreDevice] start requested source=\(source, privacy: .public) active=\(coreDevice.isActive) stopping=\(coreDevice.isStopping)")
+        guard !coreDevice.isActive, !coreDevice.isStopping else {
+            SpecchioLogger.easyMode.info("[CoreDevice] start skipped branch=already-active-or-stopping")
+            return
+        }
+        dismissConnectionTutorialIfNeeded(reason: "CoreDevice connect")
+        sourceBeforeCoreDevice = appState.activeVideoSource
+        coreDevice.start()
+        if coreDevice.isActive {
+            SpecchioLogger.easyMode.info("[CoreDevice] start accepted branch=coredevice-input-and-video")
+            appState.activeVideoSource = .coreDevice
+            appState.coreDeviceStream = coreDevice
+            bluetoothHIDPanel.setReplayKitInputForwardingEnabled(false, reason: "CoreDevice owns input")
+            hideVideoPremiumOverlay(trigger: "CoreDevice selected", resetPresentation: true)
+        } else {
+            SpecchioLogger.easyMode.warning("[CoreDevice] start not active status=\(coreDevice.status, privacy: .public)")
         }
     }
 
@@ -3683,12 +3959,103 @@ struct EasyModeView: View {
                 .onAppear {
                     SpecchioLogger.easyMode.info("[EasyGlowSweep] waiting title installed text=Specchio source=ShipSwift")
                 }
+            iPhoneSetupControls
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+    }
+
+    @ViewBuilder
+    private var iPhoneSetupControls: some View {
+        VStack(spacing: 24) {
+            if easyIPhoneVersion == .unselected {
+                Text("Which iOS version is on your iPhone?")
+                    .font(.headline)
+                    .multilineTextAlignment(.center)
+                Text("Find it in Settings > General > About.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("iOS 27 or later") { easyIPhoneVersion = .iOS27OrLater }
+                    .buttonStyle(.borderedProminent)
+                Button("iOS 26 or earlier") { easyIPhoneVersion = .earlier }
+                    .buttonStyle(.bordered)
+            } else {
+                Picker("iPhone version", selection: $easyIPhoneVersion) {
+                    Text("iOS 27 or later").tag(EasyIPhoneVersion.iOS27OrLater)
+                    Text("iOS 26 or earlier").tag(EasyIPhoneVersion.earlier)
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+
+                if easyIPhoneVersion == .iOS27OrLater {
+                    coreDeviceSetupControls
+                } else {
+                    legacySetupControls
+                }
+            }
+        }
+        .frame(maxWidth: 420)
+        .onAppear {
+            SpecchioLogger.easyMode.info("[iPhoneSetup] displayed selection=\(easyIPhoneVersion.rawValue, privacy: .public)")
+        }
+        .onChange(of: easyIPhoneVersion) { oldValue, newValue in
+            SpecchioLogger.easyMode.info("[iPhoneSetup] selection changed from=\(oldValue.rawValue, privacy: .public) to=\(newValue.rawValue, privacy: .public) persisted=true")
+            dismissConnectionTutorialIfNeeded(reason: "iPhone version changed")
+        }
+    }
+
+    private func openDeveloperModeGuide(source: String) {
+        let url = URL(string: "https://www.youtube.com/shorts/4U4n1r2p7_o")!
+        SpecchioLogger.easyMode.info("[DeveloperModeGuide] opening YouTube source=\(source, privacy: .public)")
+        let opened = NSWorkspace.shared.open(url)
+        SpecchioLogger.easyMode.info("[DeveloperModeGuide] open result accepted=\(opened)")
+    }
+
+    private var coreDeviceSetupControls: some View {
+        VStack(spacing: 24) {
+            Text("Connect with CoreDevice")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            SpecchioSetupTutorialButton(
+                title: "Setup Guide",
+                systemImage: "play.rectangle",
+                accessibilityLabel: "Watch Developer Mode setup guide on YouTube",
+                debugName: "developer-mode-setup-button"
+            ) {
+                openDeveloperModeGuide(source: "iPhone setup")
+            }
+            SWPlasmaActionButton(
+                title: "Connect",
+                systemImage: "wifi",
+                foregroundColor: .white,
+                style: .prism,
+                c1: .specchioPlasmaRGB(0x2A0A4A),
+                c2: .specchioPlasmaRGB(0x6B4FA0),
+                c3: .specchioPlasmaRGB(0x0288FF),
+                c4: .specchioPlasmaRGB(0x000387),
+                c5: .specchioPlasmaRGB(0x000387),
+                scale: 1.25,
+                intensity: 1.1,
+                distortion: 1.0,
+                accessibilityLabel: "Connect with CoreDevice",
+                debugName: "easy-coredevice-connect-button"
+            ) {
+                startCoreDeviceConnection(source: "iOS 27 setup")
+            }
+            .disabled(coreDevice.isStopping)
+        }
+        .onAppear {
+            SpecchioLogger.easyMode.info("[iPhoneSetup] controls displayed pipeline=CoreDevice")
+        }
+    }
+
+    private var legacySetupControls: some View {
+        VStack(spacing: 24) {
             Text("Choose the way you are going to connect to Specchio")
                 .font(.headline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 420)
 
             videoSourceControlStrip
 
@@ -3731,8 +4098,9 @@ struct EasyModeView: View {
             }
             .interactiveTutorialTarget(.easyConnectKeyboard, visualHeight: SWPlasmaActionButton.visualHeight)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 32)
+        .onAppear {
+            SpecchioLogger.easyMode.info("[iPhoneSetup] controls displayed pipeline=legacy-bluetooth")
+        }
     }
 
     @ViewBuilder
@@ -4354,7 +4722,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
     func attachHostWindow(_ window: NSWindow?, reason: String) {
         guard hostWindow !== window else {
             SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host attach skipped reason=\(reason, privacy: .public) branch=same-window windowNumber=\(self.hostWindow?.windowNumber ?? -1)")
-            positionVisiblePanel(reason: "\(reason)-same-window")
+            restoreDesiredPanelIfReady(reason: "\(reason)-same-window")
             return
         }
 
@@ -4496,8 +4864,16 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
             y: session.startHostFrame.origin.y + deltaY
         )
         hostWindow.setFrameOrigin(nextOrigin)
+        NotificationCenter.default.post(
+            name: .easyModeProgrammaticWindowFrameDidChange,
+            object: hostWindow,
+            userInfo: [
+                "source": "floating-toolbar-host-drag",
+                "reason": reason
+            ]
+        )
         positionVisiblePanel(reason: "\(reason)-dragging")
-        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host drag updated reason=\(reason, privacy: .public) eventNumber=\(event.eventNumber) hostWindow=\(hostWindow.windowNumber) deltaX=\(deltaX) deltaY=\(deltaY) hostFrame=\(InputSurfaceDiagnostics.rectString(hostWindow.frame), privacy: .public) startPanelFrame=\(InputSurfaceDiagnostics.rectString(session.startPanelFrame), privacy: .public)")
+        SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] host drag updated reason=\(reason, privacy: .public) eventNumber=\(event.eventNumber) hostWindow=\(hostWindow.windowNumber) deltaX=\(deltaX) deltaY=\(deltaY) hostFrame=\(InputSurfaceDiagnostics.rectString(hostWindow.frame), privacy: .public) startPanelFrame=\(InputSurfaceDiagnostics.rectString(session.startPanelFrame), privacy: .public) frameNotificationPosted=true")
     }
 
     func endHostWindowDrag(with event: NSEvent, reason: String) {
@@ -4579,6 +4955,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
             defer: false
         )
         panel.title = panelTitle
+        panel.identifier = .specchioEasyFloatingToolbarPanel
         panel.isFloatingPanel = currentAlwaysOnTop
         panel.level = currentAlwaysOnTop ? .floating : .normal
         panel.collectionBehavior = [.fullScreenAuxiliary, .moveToActiveSpace]
@@ -4694,6 +5071,36 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
         }
 
         position(panel, near: hostWindow, anchor: currentAnchor, reason: reason)
+    }
+
+    private func restoreDesiredPanelIfReady(reason: String) {
+        guard desiredVisible else {
+            SpecchioLogger.easyMode.debug("[EasyFloatingToolbarPanel] restore skipped reason=\(reason, privacy: .public) branch=not-desired")
+            return
+        }
+
+        guard let panel else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] restore skipped reason=\(reason, privacy: .public) branch=no-panel")
+            return
+        }
+
+        guard let hostWindow else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] restore skipped reason=\(reason, privacy: .public) branch=no-host-window")
+            orderOut(reason: "\(reason)-no-host-window")
+            return
+        }
+
+        guard !hostWindow.isMiniaturized else {
+            SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] restore skipped reason=\(reason, privacy: .public) branch=host-miniaturized windowNumber=\(hostWindow.windowNumber)")
+            orderOut(reason: "\(reason)-host-miniaturized")
+            return
+        }
+
+        configurePanelLevel(panel, alwaysOnTop: currentAlwaysOnTop, reason: "\(reason)-restore")
+        configurePanelMovement(panel, allowsDragging: currentAllowsDragging, reason: "\(reason)-restore")
+        updateContentSize(for: panel, reason: "\(reason)-restore")
+        position(panel, near: hostWindow, anchor: currentAnchor, reason: reason)
+        orderPanelAboveHost(panel, hostWindow: hostWindow, reason: reason)
     }
 
     private func orderPanelAboveHost(_ panel: NSPanel, hostWindow: NSWindow, reason: String) {
@@ -4848,14 +5255,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
                 object: window,
                 queue: .main
             ) { [weak self] _ in
-                guard let self else { return }
-                guard self.desiredVisible, let panel = self.panel, let hostWindow = self.hostWindow else {
-                    SpecchioLogger.easyMode.info("[EasyFloatingToolbarPanel] deminiaturize show skipped branch=not-ready desiredVisible=\(self.desiredVisible) hasPanel=\(self.panel != nil) hasHost=\(self.hostWindow != nil)")
-                    return
-                }
-
-                self.position(panel, near: hostWindow, anchor: self.currentAnchor, reason: "host-window-deminiaturized")
-                self.orderPanelAboveHost(panel, hostWindow: hostWindow, reason: "host-window-deminiaturized")
+                self?.restoreDesiredPanelIfReady(reason: "host-window-deminiaturized")
             },
             NotificationCenter.default.addObserver(
                 forName: NSWindow.willCloseNotification,
@@ -4893,7 +5293,7 @@ private final class EasyFloatingToolbarPanelController: NSObject, ObservableObje
                 object: NSApplication.shared,
                 queue: .main
             ) { [weak self] _ in
-                self?.positionVisiblePanel(reason: "app-did-become-active")
+                self?.restoreDesiredPanelIfReady(reason: "app-did-become-active")
             },
             NotificationCenter.default.addObserver(
                 forName: NSApplication.didResignActiveNotification,
@@ -4940,6 +5340,7 @@ private struct EasyFloatingToolbarPanelContent: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    let performDeviceCommand: (EasyToolbarCommand, String) -> Void
 
     var body: some View {
         HStack(spacing: EasyMirroringPresentationMetrics.headerItemSpacing) {
@@ -4970,6 +5371,7 @@ private struct EasyFloatingToolbarPanelContent: View {
                 rotateScreen: rotateScreen,
                 disconnectStream: disconnectStream,
                 performEasyAutoUnlock: performEasyAutoUnlock,
+                performDeviceCommand: performDeviceCommand,
                 source: "floating-toolbar-visible",
                 overflowSource: "floating-toolbar-overflow"
             )
@@ -7598,6 +8000,8 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
     case volumeUp
     case mute
     case home
+    case dragLeft
+    case dragRight
     case autoUnlock
     case rotateScreen
     case privacyBlur
@@ -7614,6 +8018,8 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
         .volumeUp,
         .mute,
         .home,
+        .dragLeft,
+        .dragRight,
         .autoUnlock,
         .rotateScreen,
         .privacyBlur,
@@ -7672,6 +8078,8 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
         case .volumeUp: return "Volume Up"
         case .mute: return "Mute"
         case .home: return "Home"
+        case .dragLeft: return "Drag Left"
+        case .dragRight: return "Drag Right"
         case .autoUnlock: return "Unlock"
         case .rotateScreen: return "Rotate Screen"
         case .privacyBlur: return "Privacy Blur"
@@ -7690,6 +8098,8 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
         case .volumeUp: return "speaker.wave.3"
         case .mute: return "speaker.slash"
         case .home: return "house"
+        case .dragLeft: return "chevron.left"
+        case .dragRight: return "chevron.right"
         case .autoUnlock: return "lock.open"
         case .rotateScreen: return "rotate.right"
         case .privacyBlur: return "eye.slash"
@@ -7708,6 +8118,8 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
         case .volumeUp: return "Consumer Control: Volume Up"
         case .mute: return "Consumer Control: Mute"
         case .home: return "Consumer Control: Home"
+        case .dragLeft: return "Synthetic drag: right to left"
+        case .dragRight: return "Synthetic drag: left to right"
         case .autoUnlock: return "Auto-Unlock sequence"
         case .rotateScreen: return "Specchio display rotation"
         case .privacyBlur: return "Specchio privacy blur"
@@ -7721,7 +8133,7 @@ enum EasyToolbarCommand: String, CaseIterable, Identifiable {
 }
 
 struct EasyToolbarCommandLayout: Equatable {
-    static let maximumVisibleCommandCount = 5
+    static let maximumVisibleCommandCount = 7
 
     let visibleCommands: [EasyToolbarCommand]
     let overflowCommands: [EasyToolbarCommand]
@@ -7830,6 +8242,7 @@ private enum EasyAutoUnlockFeedback: Equatable, Identifiable {
     case started
     case missingPasscode
     case disabled
+    case coreDeviceUnavailable
     case bluetoothDisconnected
     case unsupportedCharacters(Int)
 
@@ -7841,6 +8254,7 @@ private enum EasyAutoUnlockFeedback: Equatable, Identifiable {
             return "missing-passcode"
         case .disabled:
             return "disabled"
+        case .coreDeviceUnavailable: return "coredevice-unavailable"
         case .bluetoothDisconnected:
             return "bluetooth-disconnected"
         case .unsupportedCharacters(let count):
@@ -7856,6 +8270,7 @@ private enum EasyAutoUnlockFeedback: Equatable, Identifiable {
             return "No passcode saved"
         case .disabled:
             return "Auto-Unlock is off"
+        case .coreDeviceUnavailable: return "CoreDevice stream is not ready"
         case .bluetoothDisconnected:
             return "Bluetooth input is not connected"
         case .unsupportedCharacters:
@@ -7871,6 +8286,7 @@ private enum EasyAutoUnlockFeedback: Equatable, Identifiable {
             return "key.slash.fill"
         case .disabled:
             return "lock.slash.fill"
+        case .coreDeviceUnavailable: return "wifi.slash"
         case .bluetoothDisconnected:
             return "antenna.radiowaves.left.and.right.slash"
         case .unsupportedCharacters:
@@ -7882,7 +8298,7 @@ private enum EasyAutoUnlockFeedback: Equatable, Identifiable {
         switch self {
         case .started:
             return .green
-        case .missingPasscode, .disabled, .bluetoothDisconnected, .unsupportedCharacters:
+        case .missingPasscode, .disabled, .bluetoothDisconnected, .coreDeviceUnavailable, .unsupportedCharacters:
             return .orange
         }
     }
@@ -7918,6 +8334,7 @@ private struct EasyToolbarCommandRow: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    let performDeviceCommand: (EasyToolbarCommand, String) -> Void
     var source = "control-bar-visible"
     var overflowSource = "control-bar-overflow"
 
@@ -7934,6 +8351,7 @@ private struct EasyToolbarCommandRow: View {
                     rotateScreen: rotateScreen,
                     disconnectStream: disconnectStream,
                     performEasyAutoUnlock: performEasyAutoUnlock,
+                    performDeviceCommand: performDeviceCommand,
                     source: source
                 )
             }
@@ -7949,6 +8367,7 @@ private struct EasyToolbarCommandRow: View {
                     rotateScreen: rotateScreen,
                     disconnectStream: disconnectStream,
                     performEasyAutoUnlock: performEasyAutoUnlock,
+                    performDeviceCommand: performDeviceCommand,
                     source: overflowSource
                 )
             }
@@ -7972,6 +8391,7 @@ private struct EasyToolbarCommandButton: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    let performDeviceCommand: (EasyToolbarCommand, String) -> Void
     let source: String
 
     var body: some View {
@@ -8020,22 +8440,8 @@ private struct EasyToolbarCommandButton: View {
     private func performCommand() {
         SpecchioLogger.easyMode.info("[EasyToolbarCommand] selected source=\(source, privacy: .public) command=\(command.rawValue, privacy: .public) title=\(command.title, privacy: .public)")
         switch command {
-        case .search:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2C],
-                holdDuration: 0.05
-            )
-        case .volumeDown:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 9, name: command.title)
-        case .volumeUp:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 10, name: command.title)
-        case .mute:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 8, name: command.title)
-        case .home:
-            recordEasyHomeCommandDiagnostic(source: source, displayRotationDegrees: phoneDisplayRotationDegrees)
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 2, name: command.title)
+        case .search, .volumeDown, .volumeUp, .mute, .home, .dragLeft, .dragRight, .screenshot, .switchApps, .appSwitcher:
+            performDeviceCommand(command, source)
         case .autoUnlock:
             performEasyAutoUnlock(source)
         case .rotateScreen:
@@ -8044,27 +8450,6 @@ private struct EasyToolbarCommandButton: View {
             let nextValue = !replayKitPrivacyBlurEnabled
             SpecchioLogger.easyMode.info("[EasyPrivacyBlur] toggle selected source=\(source, privacy: .public) from=\(replayKitPrivacyBlurEnabled) to=\(nextValue)")
             replayKitPrivacyBlurEnabled = nextValue
-        case .screenshot:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x0A,
-                keyCodes: [0x20],
-                holdDuration: 0.05
-            )
-        case .switchApps:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2B],
-                holdDuration: 0.12
-            )
-        case .appSwitcher:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2B],
-                holdDuration: 0.45
-            )
         case .disconnect:
             disconnectStream(source)
         case .showShortcuts:
@@ -8084,6 +8469,7 @@ private struct EasyToolbarOverflowMenu: View {
     let rotateScreen: (String) -> Void
     let disconnectStream: (String) -> Void
     let performEasyAutoUnlock: (String) -> Void
+    let performDeviceCommand: (EasyToolbarCommand, String) -> Void
     var source = "control-bar-overflow"
 
     var body: some View {
@@ -8125,22 +8511,8 @@ private struct EasyToolbarOverflowMenu: View {
     private func perform(_ command: EasyToolbarCommand) {
         SpecchioLogger.easyMode.info("[EasyToolbarCommand] selected source=\(source, privacy: .public) command=\(command.rawValue, privacy: .public) title=\(command.title, privacy: .public)")
         switch command {
-        case .search:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2C],
-                holdDuration: 0.05
-            )
-        case .volumeDown:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 9, name: command.title)
-        case .volumeUp:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 10, name: command.title)
-        case .mute:
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 8, name: command.title)
-        case .home:
-            recordEasyHomeCommandDiagnostic(source: source, displayRotationDegrees: phoneDisplayRotationDegrees)
-            bluetoothHIDPanel.sendConsumerControlCommand(bit: 2, name: command.title)
+        case .search, .volumeDown, .volumeUp, .mute, .home, .dragLeft, .dragRight, .screenshot, .switchApps, .appSwitcher:
+            performDeviceCommand(command, source)
         case .autoUnlock:
             performEasyAutoUnlock(source)
         case .rotateScreen:
@@ -8149,27 +8521,6 @@ private struct EasyToolbarOverflowMenu: View {
             let nextValue = !replayKitPrivacyBlurEnabled
             SpecchioLogger.easyMode.info("[EasyPrivacyBlur] toggle selected source=\(source, privacy: .public) from=\(replayKitPrivacyBlurEnabled) to=\(nextValue)")
             replayKitPrivacyBlurEnabled = nextValue
-        case .screenshot:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x0A,
-                keyCodes: [0x20],
-                holdDuration: 0.05
-            )
-        case .switchApps:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2B],
-                holdDuration: 0.12
-            )
-        case .appSwitcher:
-            bluetoothHIDPanel.sendKeyboardShortcutCommand(
-                name: command.title,
-                modifiers: 0x08,
-                keyCodes: [0x2B],
-                holdDuration: 0.45
-            )
         case .disconnect:
             disconnectStream(source)
         case .showShortcuts:

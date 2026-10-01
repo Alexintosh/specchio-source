@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 
 enum SpecchioVideoSourceKind: String, Equatable {
+    case coreDevice
     case replayKit
     case airPlay
     case iosScreenCaptureUSB
@@ -12,6 +13,8 @@ enum SpecchioVideoSourceKind: String, Equatable {
 
     var displayName: String {
         switch self {
+        case .coreDevice:
+            return "CoreDevice Wi-Fi"
         case .replayKit:
             return "ReplayKit"
         case .airPlay:
@@ -35,6 +38,8 @@ enum SpecchioVideoSourceKind: String, Equatable {
 
     var statusColor: Color {
         switch self {
+        case .coreDevice:
+            return .purple
         case .iosScreenCaptureUSB:
             return .cyan
         case .replayKit:
@@ -75,6 +80,7 @@ class AppState: ObservableObject {
     @Published var replayKitStream: ReplayKitScreenStreamManager?
     @Published var airPlayStream: AirPlayScreenStreamManager?
     @Published var iosScreenCaptureStream: IOSScreenCaptureManager?
+    @Published var coreDeviceStream: CoreDeviceStreamManager?
     @Published var activeVideoSource: SpecchioVideoSourceKind = .none
     @Published var lastVideoFallbackReason: String?
 
@@ -88,6 +94,8 @@ class AppState: ObservableObject {
     }
 
     func disconnect() {
+        coreDeviceStream?.stop()
+        coreDeviceStream = nil
         SpecchioLogger.easyMode.info("[AppStateDisconnect] requested activeSource=\(self.activeVideoSource.diagnosticName, privacy: .public) connectionState=\(String(describing: self.connectionState), privacy: .public) hasUSB=\(self.iosScreenCaptureStream != nil) hasAirPlay=\(self.airPlayStream != nil) hasReplayKit=\(self.replayKitStream != nil) hasInputSocket=\(self.inputSocket != nil) hasKeyboardExt=\(self.keyboardExtSocket != nil)")
         iosScreenCaptureStream?.stopCapture(reason: "AppState.disconnect", clearFrame: true)
         iosScreenCaptureStream = nil

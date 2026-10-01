@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Security
+import IOKit
 import os.log
 import CommonCrypto
 
@@ -10,6 +11,13 @@ private let log = Logger(subsystem: "com.alexintosh.Specchio", category: "Licens
 class LicenseManager: ObservableObject {
 
     static let shared = LicenseManager()
+
+    private let keychain: SpecchioKeychainStore
+    private var keychainSnapshot: [String: Data] = [:]
+    private var keychainReadFailure: OSStatus?
+    private var operationInProgress = false
+
+    init(keychain: SpecchioKeychainStore = .shared) { self.keychain = keychain }
 
     // MARK: - Types
 
@@ -86,6 +94,9 @@ class LicenseManager: ObservableObject {
     // MARK: - Activate
 
     func activate(key: String) async {
+        guard !operationInProgress else { log.info("License activation skipped: operation in progress"); return }
+        operationInProgress = true
+        defer { operationInProgress = false }
         let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             status = .error("License key cannot be empty")
@@ -118,7 +129,10 @@ class LicenseManager: ObservableObject {
             if http.statusCode == 200 {
                 let result = try JSONDecoder().decode(PolarActivationResponse.self, from: data)
                 let activationId = result.id
-                saveToKeychain(key: trimmedKey, activationId: activationId)
+                guard saveToKeychain(key: trimmedKey, activationId: activationId) else {
+                    status = .error("License activated, but could not be saved in Keychain. Retry saving with Activate.")
+                    return
+                }
                 updateGraceTimestamp()
 
                 let expiration = Self.parseISO8601(result.licenseKey.expiresAt)
@@ -139,7 +153,16 @@ class LicenseManager: ObservableObject {
 
     // MARK: - Validate
 
-    func validate() async {
+    func validate(allowAuthenticationUI: Bool = false) async {
+        guard !operationInProgress else { log.info("Duplicate license validation skipped"); return }
+        operationInProgress = true
+        defer { operationInProgress = false }
+        refreshKeychainSnapshot(allowUI: allowAuthenticationUI)
+        if let failure = keychainReadFailure {
+            log.info("License validation deferred: Keychain access unavailable status=\(failure)")
+            status = .error("License access needs permission. Use Retry License Access in Settings.")
+            return
+        }
         guard let (key, activationId) = loadFromKeychain() else {
             log.info("No stored license key, staying on free tier")
             status = .free
@@ -187,9 +210,8 @@ class LicenseManager: ObservableObject {
                 if isWithinGracePeriod {
                     status = .error("Offline — using grace period")
                 } else {
-                    clearKeychain()
-                    status = .free
-                    log.warning("Grace period expired, reverting to free tier")
+                    status = .error("License validation failed. Retry License Access in Settings.")
+                    log.warning("No usable grace period; preserving stored credentials after HTTP failure")
                 }
             }
         } catch {
@@ -205,6 +227,14 @@ class LicenseManager: ObservableObject {
     // MARK: - Deactivate
 
     func deactivate() async {
+        guard !operationInProgress else { log.info("License deactivation skipped: operation in progress"); return }
+        operationInProgress = true
+        defer { operationInProgress = false }
+        refreshKeychainSnapshot(allowUI: true)
+        guard keychainReadFailure == nil else {
+            status = .error("License access was not granted. Nothing was deactivated.")
+            return
+        }
         guard let (key, activationId) = loadFromKeychain() else {
             status = .free
             return
@@ -249,9 +279,9 @@ class LicenseManager: ObservableObject {
 
     // MARK: - Keychain Helpers
 
-    private func saveToKeychain(key: String, activationId: String) {
-        setKeychainItem(account: Self.keychainAccountKey, data: Data(key.utf8))
-        setKeychainItem(account: Self.keychainAccountActivationId, data: Data(activationId.utf8))
+    private func saveToKeychain(key: String, activationId: String) -> Bool {
+        guard setKeychainItem(account: Self.keychainAccountKey, data: Data(key.utf8), allowUI: true) else { return false }
+        return setKeychainItem(account: Self.keychainAccountActivationId, data: Data(activationId.utf8), allowUI: true)
     }
 
     func loadFromKeychain() -> (key: String, activationId: String)? {
@@ -265,47 +295,58 @@ class LicenseManager: ObservableObject {
     }
 
     private func clearKeychain() {
+        // Revocation/deactivation must invalidate cached grace even if deletion fails.
+        keychainSnapshot.removeAll()
         deleteKeychainItem(account: Self.keychainAccountKey)
         deleteKeychainItem(account: Self.keychainAccountActivationId)
         deleteKeychainItem(account: Self.keychainAccountGrace)
     }
 
-    private func setKeychainItem(account: String, data: Data) {
-        deleteKeychainItem(account: account)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        ]
-        let status = SecItemAdd(query as CFDictionary, nil)
-        if status != errSecSuccess {
-            log.error("Keychain write failed for \(account): \(status)")
+    private func refreshKeychainSnapshot(allowUI: Bool) {
+        keychainReadFailure = nil
+        for account in [Self.keychainAccountKey, Self.keychainAccountActivationId, Self.keychainAccountGrace] {
+            // Grace data is never a reason to show another authentication dialog.
+            let result = keychain.read(service: Self.keychainService, account: account,
+                                       allowUI: allowUI && account != Self.keychainAccountGrace)
+            if result.status == errSecSuccess {
+                keychainSnapshot[account] = result.data
+            } else if result.status == errSecItemNotFound {
+                keychainSnapshot.removeValue(forKey: account)
+            } else {
+                if account != Self.keychainAccountGrace {
+                    keychainReadFailure = result.status
+                    return // Do not cascade prompts after a denial/cancellation.
+                }
+                log.info("Grace data unavailable; retaining only previously verified in-memory data")
+            }
         }
     }
 
+    @discardableResult
+    private func setKeychainItem(account: String, data: Data, allowUI: Bool = false) -> Bool {
+        // Called after successful server validation/activation, not a request to
+        // authenticate the Keychain. Preserve an existing item if writing fails.
+        let status = keychain.write(service: Self.keychainService, account: account, data: data, allowUI: allowUI)
+        if status == errSecSuccess {
+            keychainSnapshot[account] = data
+        } else {
+            log.error("Keychain write unavailable for \(account): \(status)")
+        }
+        return status == errSecSuccess
+    }
+
     private func getKeychainItem(account: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess else { return nil }
-        return result as? Data
+        // UI rendering and isPremium must be pure in-memory reads.
+        keychainSnapshot[account]
     }
 
     private func deleteKeychainItem(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: Self.keychainService,
-            kSecAttrAccount as String: account
-        ]
-        SecItemDelete(query as CFDictionary)
+        let status = keychain.delete(service: Self.keychainService, account: account, allowUI: false)
+        if status == errSecSuccess || status == errSecItemNotFound {
+            keychainSnapshot.removeValue(forKey: account)
+        } else {
+            log.error("Keychain delete unavailable for \(account): \(status)")
+        }
     }
 
     // MARK: - Grace Period (HMAC-signed)

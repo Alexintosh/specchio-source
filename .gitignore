@@ -15,15 +15,6 @@ Specchio.xcworkspace/xcuserdata/
 # Build output
 DerivedData/
 build/
-*.xcarchive/
-*.dmg
-*.zip
-*.pkg
 
 # macOS
 .DS_Store
-
-# Generated or externally supplied binaries
-SupportingFiles/AirPlayFairPlay/*.dylib
-SupportingFiles/BundledTools/iproxy
-SupportingFiles/BundledTools/*.dylib

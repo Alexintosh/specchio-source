@@ -1,7 +1,7 @@
 # Specchio
 
 Specchio is a macOS application for mirroring and controlling iPhone screens
-through USB, ReplayKit, and AirPlay paths.
+through CoreDevice Wi-Fi, USB, ReplayKit, and AirPlay paths.
 
 This repository is a public source release for affected Specchio builds. It is
 prepared from sanitized source snapshots and excludes private release
@@ -24,6 +24,7 @@ Each tag corresponds to a Specchio build number:
 - `specchio-2026060902`
 - `specchio-2026061101`
 - `specchio-2026061201`
+- `specchio-2026100101`
 
 Check out the tag matching the build you received and read `BUILD.md`.
 
